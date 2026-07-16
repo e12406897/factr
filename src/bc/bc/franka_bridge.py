@@ -23,7 +23,7 @@ import pinocchio as pin
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from bc.utils import create_joint_state_msg
+from src.bc.bc.utils import create_joint_state_msg
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from python_utils.global_configs import franka_left_real_zmq_addresses
 from python_utils.global_configs import franka_right_real_zmq_addresses

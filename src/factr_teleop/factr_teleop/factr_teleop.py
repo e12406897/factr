@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 
 from rclpy.node import Node
 from python_utils.utils import get_workspace_root
-from factr_teleop.dynamixel.driver import DynamixelDriver
+from src.factr_teleop.factr_teleop.dynamixel.driver import DynamixelDriver
 
 
 def find_ttyusb(port_name):

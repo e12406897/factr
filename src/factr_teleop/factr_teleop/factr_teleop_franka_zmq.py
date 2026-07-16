@@ -23,7 +23,7 @@ import numpy as np
 import rclpy
 from sensor_msgs.msg import JointState
 
-from factr_teleop.factr_teleop import FACTRTeleop
+from src.factr_teleop.factr_teleop.factr_teleop import FACTRTeleop
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from python_utils.global_configs import franka_left_real_zmq_addresses, franka_right_real_zmq_addresses
 
