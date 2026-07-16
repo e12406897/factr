@@ -1,0 +1,258 @@
+<mujoco model="unnamed_model">
+  <compiler autolimits="true" angle="radian"/>
+  <option integrator="implicitfast"/>
+  <default>
+    <default class="/"/>
+    <default class="fr3/">
+      <default class="fr3/fr3">
+        <joint armature="0.19500000000000001" damping="0.20999999999999999" frictionloss="1.137"/>
+        <site group="4" rgba="0.5 0.5 0.5 0.29999999999999999" size="0.001"/>
+        <position inheritrange="1"/>
+        <default class="fr3/visual">
+          <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+        </default>
+        <default class="fr3/collision">
+          <geom type="mesh" group="3" mass="0" density="0"/>
+        </default>
+      </default>
+    </default>
+    <default class="fr3/panda hand/">
+      <default class="fr3/panda hand/panda">
+        <material specular="0.5" shininess="0.25"/>
+        <joint axis="0 0 1" range="-2.8973 2.8973" armature="0.10000000000000001" damping="1"/>
+        <general ctrlrange="-2.8973 2.8973" forcerange="-87 87" dyntype="none" biastype="affine"/>
+        <default class="fr3/panda hand/finger">
+          <joint type="slide" axis="0 1 0" range="0 0.040000000000000001"/>
+        </default>
+        <default class="fr3/panda hand/visual">
+          <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+        </default>
+        <default class="fr3/panda hand/collision">
+          <geom type="mesh" group="3"/>
+          <default class="fr3/panda hand/fingertip_pad_collision_1">
+            <geom type="box" size="0.0085000000000000006 0.0040000000000000001 0.0085000000000000006" pos="0 0.0054999999999999997 0.044499999999999998"/>
+          </default>
+          <default class="fr3/panda hand/fingertip_pad_collision_2">
+            <geom type="box" size="0.0030000000000000001 0.002 0.0030000000000000001" pos="0.0054999999999999997 0.002 0.050000000000000003"/>
+          </default>
+          <default class="fr3/panda hand/fingertip_pad_collision_3">
+            <geom type="box" size="0.0030000000000000001 0.002 0.0030000000000000001" pos="-0.0054999999999999997 0.002 0.050000000000000003"/>
+          </default>
+          <default class="fr3/panda hand/fingertip_pad_collision_4">
+            <geom type="box" size="0.0030000000000000001 0.002 0.0035000000000000001" pos="0.0054999999999999997 0.002 0.0395"/>
+          </default>
+          <default class="fr3/panda hand/fingertip_pad_collision_5">
+            <geom type="box" size="0.0030000000000000001 0.002 0.0035000000000000001" pos="-0.0054999999999999997 0.002 0.0395"/>
+          </default>
+        </default>
+      </default>
+    </default>
+  </default>
+  <asset>
+    <material name="fr3/black" class="fr3/" rgba="0.20000000000000001 0.20000000000000001 0.20000000000000001 1"/>
+    <material name="fr3/white" class="fr3/" rgba="1 1 1 1"/>
+    <material name="fr3/red" class="fr3/" rgba="1 0.072272000000000003 0.039545999999999998 1"/>
+    <material name="fr3/gray" class="fr3/" rgba="0.86315600000000003 0.86315600000000003 0.86315699999999995 1"/>
+    <material name="fr3/button_green" class="fr3/" rgba="0.102241 0.57112499999999999 0.102242 1"/>
+    <material name="fr3/button_red" class="fr3/" rgba="0.52099600000000001 0.0080230000000000006 0.013702000000000001 1"/>
+    <material name="fr3/button_blue" class="fr3/" rgba="0.024157000000000001 0.44520100000000001 0.73791099999999998 1"/>
+    <mesh name="fr3/link0_0" class="fr3/" file="link0_0-5796cc0c3c0c93e3d6d1d4e59aa5eb35ec40c0ca.obj"/>
+    <mesh name="fr3/link0_1" class="fr3/" file="link0_1-c55174f817ae7ad7f8efac01ee36dc9a469d40e0.obj"/>
+    <mesh name="fr3/link0_2" class="fr3/" file="link0_2-56e8ade63be9c1e22448b75e429b68362690115c.obj"/>
+    <mesh name="fr3/link0_3" class="fr3/" file="link0_3-ed1963441f10b22e73990eaa4e85c868eb1506f4.obj"/>
+    <mesh name="fr3/link0_4" class="fr3/" file="link0_4-a8caaab94d1e8979af6b122b3f106c1dbba04954.obj"/>
+    <mesh name="fr3/link0_5" class="fr3/" file="link0_5-1e313549e0f4843eb8d746e11794eb24a3cca471.obj"/>
+    <mesh name="fr3/link0_6" class="fr3/" file="link0_6-16e195e0bcd2935316f83fa044fcbeff66b3e39c.obj"/>
+    <mesh name="fr3/link1" class="fr3/" file="link1-a7ab2e54309588710b6b6ae0395f393f8a5ae9c7.obj"/>
+    <mesh name="fr3/link2" class="fr3/" file="link2-49217c1c5988448f4aa80960fb3824c70d8ad337.obj"/>
+    <mesh name="fr3/link3_0" class="fr3/" file="link3_0-43ab20c7cff9aa817972d7ce5b6c05a7db8709a8.obj"/>
+    <mesh name="fr3/link3_1" class="fr3/" file="link3_1-abd496bd33c3412771762f0063f7bb2f0e903423.obj"/>
+    <mesh name="fr3/link4_0" class="fr3/" file="link4_0-a8e5366f6749965832e06641a48a11b64b1eb7ed.obj"/>
+    <mesh name="fr3/link4_1" class="fr3/" file="link4_1-0b8b57a5bdf237bc089ffe2131115ff97cca9872.obj"/>
+    <mesh name="fr3/link5_0" class="fr3/" file="link5_0-def68e36621316cfafeacbe7c27281b27b03852a.obj"/>
+    <mesh name="fr3/link5_1" class="fr3/" file="link5_1-70ad5b76e5dd124809a418c2052962cf8d68cf6b.obj"/>
+    <mesh name="fr3/link5_2" class="fr3/" file="link5_2-c083cf4d09ff9db495a9d42fa1030c196e95e927.obj"/>
+    <mesh name="fr3/link6_0" class="fr3/" file="link6_0-72b67feaf697d011cf65629c70a27f3338de8970.obj"/>
+    <mesh name="fr3/link6_1" class="fr3/" file="link6_1-b130a391da6543117f958837eb7cb3f1316498d2.obj"/>
+    <mesh name="fr3/link6_2" class="fr3/" file="link6_2-8f3204be4d9488a5d0b536f8c56b40458bb1e297.obj"/>
+    <mesh name="fr3/link6_3" class="fr3/" file="link6_3-99aa80a55daefbe82b6cdc2eb482121d34f08499.obj"/>
+    <mesh name="fr3/link6_4" class="fr3/" file="link6_4-ff6bc350a01492e6e767f28270886ebbb886a65c.obj"/>
+    <mesh name="fr3/link6_5" class="fr3/" file="link6_5-e2404f64504fc4056f922de2ade0ba268d3cf2f9.obj"/>
+    <mesh name="fr3/link6_6" class="fr3/" file="link6_6-be8f13c36452460f770ec05088b04914c48b53bd.obj"/>
+    <mesh name="fr3/link6_7" class="fr3/" file="link6_7-8f00e58034bc3e2589348a88f755744c0c276794.obj"/>
+    <mesh name="fr3/link7_0" class="fr3/" file="link7_0-edf9e8e03c792e59240ce83051556666d2e75f79.obj"/>
+    <mesh name="fr3/link7_1" class="fr3/" file="link7_1-dc20dacf4bb185947a9cf310f7ffd6073de671f5.obj"/>
+    <mesh name="fr3/link7_2" class="fr3/" file="link7_2-d3ddf3e70362eec5760c5453640b1516a75a24fc.obj"/>
+    <mesh name="fr3/link7_3" class="fr3/" file="link7_3-cd46a2668e51a6a2b54ba71fcbc2003eddecc53e.obj"/>
+    <mesh name="fr3/link0_coll" class="fr3/" file="link0-3f633d19409870795516c6de40b4c7922f53c43d.stl"/>
+    <mesh name="fr3/link1_coll" class="fr3/" file="link1-53f934209b6019b996b6d9c714d0a9cf102f7fb2.stl"/>
+    <mesh name="fr3/link2_coll" class="fr3/" file="link2-8500c695b73e8ceeaa520c02db5684f02793b80f.stl"/>
+    <mesh name="fr3/link3_coll" class="fr3/" file="link3-0af960563df21dd3a3b0afac6e34f62bf10c71c4.stl"/>
+    <mesh name="fr3/link4_coll" class="fr3/" file="link4-97c9a53ee35f3939b3438a38005e78fd4c9f23cb.stl"/>
+    <mesh name="fr3/link5_coll" class="fr3/" file="link5-45f32b743a68e18d2c32d189c4bad39b4c3bb513.stl"/>
+    <mesh name="fr3/link6_coll" class="fr3/" file="link6-e9fa3ad660cf2a9b04e0ec55e8d56abf5891d531.stl"/>
+    <mesh name="fr3/link7_coll" class="fr3/" file="link7-5dcc7199c8e231447ebda37651ead64ebe3cf6ec.stl"/>
+    <material name="fr3/panda hand/white" class="fr3/panda hand/panda" rgba="1 1 1 1"/>
+    <material name="fr3/panda hand/off_white" class="fr3/panda hand/panda" rgba="0.90196100000000001 0.92156899999999997 0.92941200000000002 1"/>
+    <material name="fr3/panda hand/black" class="fr3/panda hand/panda" rgba="0.25 0.25 0.25 1"/>
+    <mesh name="fr3/panda hand/hand_c" class="fr3/panda hand/" file="hand-56394d6e04b1579484cd4323dc50c3240332cfe2.stl"/>
+    <mesh name="fr3/panda hand/hand_0" class="fr3/panda hand/" file="hand_0-cfe318371d80d790934fba8bf6b6fb7f64071ac6.obj"/>
+    <mesh name="fr3/panda hand/hand_1" class="fr3/panda hand/" file="hand_1-7cd93918f5bc964665658b0af0ff92876fe9a85d.obj"/>
+    <mesh name="fr3/panda hand/hand_2" class="fr3/panda hand/" file="hand_2-9aff904f0b08a77437e7894da1d4efc4d4a52059.obj"/>
+    <mesh name="fr3/panda hand/hand_3" class="fr3/panda hand/" file="hand_3-9909795ec9ec03e824cbb49691c32a4366fb2f4d.obj"/>
+    <mesh name="fr3/panda hand/hand_4" class="fr3/panda hand/" file="hand_4-8a7602e34e1ed3ddacdaa10cf857f811276d4a2c.obj"/>
+    <mesh name="fr3/panda hand/finger_0" class="fr3/panda hand/" file="finger_0-cf20576acd5b52daef643d398ae3b30fee1027d3.obj"/>
+    <mesh name="fr3/panda hand/finger_1" class="fr3/panda hand/" file="finger_1-87276f8cb602e3141fccda3eb9b263c18fba3fe1.obj"/>
+  </asset>
+  <worldbody>
+    <geom name="floor" class="/" type="plane" size="2 2 0.10000000000000001" rgba="0.5 0.5 0.5 1"/>
+    <body name="table" pos="0.5 0 0.40000000000000002">
+      <geom name="table_top" class="/" type="box" size="0.29999999999999999 0.29999999999999999 0.02" rgba="0.59999999999999998 0.40000000000000002 0.20000000000000001 1"/>
+    </body>
+    <body name="hole" pos="0.5 0 0.40000000000000002">
+      <geom name="hole_wall_n" class="/" type="box" size="0.030000000000000002 0.0050000000000000001 0.040000000000000001" rgba="0.29999999999999999 0.29999999999999999 0.80000000000000004 1" pos="0 0.030000000000000002 0.059999999999999998"/>
+      <geom name="hole_wall_s" class="/" type="box" size="0.030000000000000002 0.0050000000000000001 0.040000000000000001" rgba="0.29999999999999999 0.29999999999999999 0.80000000000000004 1" pos="0 -0.030000000000000002 0.059999999999999998"/>
+      <geom name="hole_wall_e" class="/" type="box" size="0.0050000000000000001 0.030000000000000002 0.040000000000000001" rgba="0.29999999999999999 0.29999999999999999 0.80000000000000004 1" pos="0.030000000000000002 0 0.059999999999999998"/>
+      <geom name="hole_wall_w" class="/" type="box" size="0.0050000000000000001 0.030000000000000002 0.040000000000000001" rgba="0.29999999999999999 0.29999999999999999 0.80000000000000004 1" pos="-0.030000000000000002 0 0.059999999999999998"/>
+    </body>
+    <body name="peg" pos="0.34999999999999998 0 0.46000000000000002">
+      <inertial pos="0 0 0" mass="0.10000000000000001" diaginertia="0.0001 0.0001 5.0000000000000002e-05"/>
+      <joint name="peg_joint" class="/" type="free"/>
+      <geom name="peg_geom" class="/" type="box" size="0.02 0.02 0.040000000000000001" rgba="0.80000000000000004 0.29999999999999999 0.29999999999999999 1"/>
+    </body>
+    <geom name="wall" class="/" type="box" size="0.01 1 0.75" rgba="0.80000000000000004 0.80000000000000004 0.80000000000000004 1" pos="-0.29999999999999999 0 0.75"/>
+    <body name="fr3/">
+      <body name="fr3/base" childclass="fr3/fr3">
+        <body name="fr3/fr3_link0">
+          <geom name="fr3//unnamed_geom_0" class="fr3/visual" material="fr3/black" mesh="fr3/link0_0"/>
+          <geom name="fr3//unnamed_geom_1" class="fr3/visual" material="fr3/white" mesh="fr3/link0_1"/>
+          <geom name="fr3//unnamed_geom_2" class="fr3/visual" material="fr3/white" mesh="fr3/link0_2"/>
+          <geom name="fr3//unnamed_geom_3" class="fr3/visual" material="fr3/white" mesh="fr3/link0_3"/>
+          <geom name="fr3//unnamed_geom_4" class="fr3/visual" material="fr3/white" mesh="fr3/link0_4"/>
+          <geom name="fr3//unnamed_geom_5" class="fr3/visual" material="fr3/red" mesh="fr3/link0_5"/>
+          <geom name="fr3//unnamed_geom_6" class="fr3/visual" material="fr3/black" mesh="fr3/link0_6"/>
+          <geom name="fr3/fr3_link0_collision" class="fr3/collision" mesh="fr3/link0_coll"/>
+          <body name="fr3/fr3_link1" pos="0 0 0.33300000000000002">
+            <inertial pos="4.1279999999999999e-07 -0.018125100000000002 -0.038603600000000002" quat="0.99809800000000004 -0.060536399999999997 0.0038049899999999998 0.011010900000000001" mass="2.92747" diaginertia="0.023928600000000001 0.022724600000000001 0.00610634"/>
+            <joint name="fr3/fr3_joint1" axis="0 0 1" actuatorfrcrange="-87 87" range="-2.7437 2.7437"/>
+            <geom name="fr3/fr3_link1_collision" class="fr3/collision" mesh="fr3/link1_coll"/>
+            <geom name="fr3//unnamed_geom_9" class="fr3/visual" material="fr3/white" mesh="fr3/link1"/>
+            <body name="fr3/fr3_link2" quat="1 -1 0 0">
+              <inertial pos="0.0031828899999999999 -0.074322200000000005 0.0088146100000000005" quat="0.50259900000000002 0.58443699999999998 -0.46599800000000002 0.43436599999999997" mass="2.93554" diaginertia="0.062956700000000004 0.041192399999999997 0.024637099999999999"/>
+              <joint name="fr3/fr3_joint2" axis="0 0 1" actuatorfrcrange="-87 87" range="-1.7837000000000001 1.7837000000000001"/>
+              <geom name="fr3//unnamed_geom_10" class="fr3/visual" material="fr3/white" mesh="fr3/link2"/>
+              <geom name="fr3/fr3_link2_collision" class="fr3/collision" mesh="fr3/link2_coll"/>
+              <body name="fr3/fr3_link3" pos="0 -0.316 0" quat="1 1 0 0">
+                <inertial pos="0.040701599999999998 -0.0048200600000000001 -0.028973100000000002" quat="0.92102499999999998 -0.24416099999999999 0.15527199999999999 0.260745" mass="2.2448999999999999" diaginertia="0.026740900000000001 0.018986900000000001 0.017158699999999999"/>
+                <joint name="fr3/fr3_joint3" axis="0 0 1" actuatorfrcrange="-87 87" range="-2.9007000000000001 2.9007000000000001"/>
+                <geom name="fr3//unnamed_geom_12" class="fr3/visual" material="fr3/white" mesh="fr3/link3_0"/>
+                <geom name="fr3//unnamed_geom_13" class="fr3/visual" material="fr3/black" mesh="fr3/link3_1"/>
+                <geom name="fr3/fr3_link3_collision" class="fr3/collision" mesh="fr3/link3_coll"/>
+                <body name="fr3/fr3_link4" pos="0.082500000000000004 0 0" quat="1 1 0 0">
+                  <inertial pos="-0.045910100000000002 0.063049300000000003 -0.00851879" quat="0.43801800000000002 0.803311 0.0093781200000000002 0.40341399999999999" mass="2.6156000000000001" diaginertia="0.051389999999999998 0.037271699999999998 0.0160047"/>
+                  <joint name="fr3/fr3_joint4" axis="0 0 1" actuatorfrcrange="-87 87" range="-3.0421 -0.15179999999999999"/>
+                  <geom name="fr3//unnamed_geom_15" class="fr3/visual" material="fr3/white" mesh="fr3/link4_0"/>
+                  <geom name="fr3//unnamed_geom_16" class="fr3/visual" material="fr3/black" mesh="fr3/link4_1"/>
+                  <geom name="fr3/fr3_link4_collision" class="fr3/collision" mesh="fr3/link4_coll"/>
+                  <body name="fr3/fr3_link5" pos="-0.082500000000000004 0.38400000000000001 0" quat="1 -1 0 0">
+                    <inertial pos="-0.00160396 0.029253600000000001 -0.097296599999999997" quat="0.91903100000000004 0.12560399999999999 0.0751531 -0.36600300000000002" mass="2.3271199999999999" diaginertia="0.057933499999999999 0.0449144 0.013063399999999999"/>
+                    <joint name="fr3/fr3_joint5" axis="0 0 1" actuatorfrcrange="-12 12" range="-2.8065000000000002 2.8065000000000002" armature="0.073999999999999996" frictionloss="0.76300000000000001"/>
+                    <geom name="fr3//unnamed_geom_18" class="fr3/visual" material="fr3/white" mesh="fr3/link5_0"/>
+                    <geom name="fr3//unnamed_geom_19" class="fr3/visual" material="fr3/white" mesh="fr3/link5_1"/>
+                    <geom name="fr3//unnamed_geom_20" class="fr3/visual" material="fr3/black" mesh="fr3/link5_2"/>
+                    <geom name="fr3/fr3_link5_collision" class="fr3/collision" mesh="fr3/link5_coll"/>
+                    <body name="fr3/fr3_link6" quat="1 1 0 0">
+                      <inertial pos="0.059713099999999998 -0.041029500000000003 -0.010169299999999999" quat="0.62130099999999999 0.55266499999999996 0.51001099999999999 0.220081" mass="1.81704" diaginertia="0.017503899999999999 0.0161123 0.0019352900000000001"/>
+                      <joint name="fr3/fr3_joint6" axis="0 0 1" actuatorfrcrange="-12 12" range="0.54449999999999998 4.5168999999999997" armature="0.073999999999999996" frictionloss="0.44"/>
+                      <geom name="fr3//unnamed_geom_22" class="fr3/visual" material="fr3/button_green" mesh="fr3/link6_0"/>
+                      <geom name="fr3//unnamed_geom_23" class="fr3/visual" material="fr3/white" mesh="fr3/link6_1"/>
+                      <geom name="fr3//unnamed_geom_24" class="fr3/visual" material="fr3/white" mesh="fr3/link6_2"/>
+                      <geom name="fr3//unnamed_geom_25" class="fr3/visual" material="fr3/gray" mesh="fr3/link6_3"/>
+                      <geom name="fr3//unnamed_geom_26" class="fr3/visual" material="fr3/button_red" mesh="fr3/link6_4"/>
+                      <geom name="fr3//unnamed_geom_27" class="fr3/visual" material="fr3/white" mesh="fr3/link6_5"/>
+                      <geom name="fr3//unnamed_geom_28" class="fr3/visual" material="fr3/black" mesh="fr3/link6_6"/>
+                      <geom name="fr3//unnamed_geom_29" class="fr3/visual" material="fr3/button_blue" mesh="fr3/link6_7"/>
+                      <geom name="fr3/fr3_link6_collision" class="fr3/collision" mesh="fr3/link6_coll"/>
+                      <body name="fr3/fr3_link7" pos="0.087999999999999995 0 0" quat="1 1 0 0">
+                        <inertial pos="0.00452258 0.0086261900000000006 -0.016163299999999999" quat="0.72757899999999998 0.097868800000000006 -0.24906 0.63168000000000002" mass="0.62714300000000001" diaginertia="0.00022383599999999999 0.000223642 5.6413199999999996e-07"/>
+                        <joint name="fr3/fr3_joint7" axis="0 0 1" actuatorfrcrange="-12 12" range="-3.0158999999999998 3.0158999999999998" armature="0.073999999999999996" frictionloss="0.248"/>
+                        <geom name="fr3//unnamed_geom_31" class="fr3/visual" material="fr3/black" mesh="fr3/link7_0"/>
+                        <geom name="fr3//unnamed_geom_32" class="fr3/visual" material="fr3/white" mesh="fr3/link7_1"/>
+                        <geom name="fr3//unnamed_geom_33" class="fr3/visual" material="fr3/white" mesh="fr3/link7_2"/>
+                        <geom name="fr3//unnamed_geom_34" class="fr3/visual" material="fr3/black" mesh="fr3/link7_3"/>
+                        <geom name="fr3/fr3_link7_collision" class="fr3/collision" mesh="fr3/link7_coll"/>
+                        <site name="fr3/attachment_site" pos="0 0 0.107"/>
+                        <body pos="0 0 0.107" name="fr3/panda hand/">
+                          <body name="fr3/panda hand/hand" childclass="fr3/panda hand/panda" quat="0 0 0 1">
+                            <inertial pos="-0.01 0 0.029999999999999999" mass="0.72999999999999998" diaginertia="0.001 0.0025000000000000001 0.0016999999999999999"/>
+                            <geom name="fr3/panda hand//unnamed_geom_0" class="fr3/panda hand/visual" material="fr3/panda hand/off_white" mesh="fr3/panda hand/hand_0"/>
+                            <geom name="fr3/panda hand//unnamed_geom_1" class="fr3/panda hand/visual" material="fr3/panda hand/black" mesh="fr3/panda hand/hand_1"/>
+                            <geom name="fr3/panda hand//unnamed_geom_2" class="fr3/panda hand/visual" material="fr3/panda hand/black" mesh="fr3/panda hand/hand_2"/>
+                            <geom name="fr3/panda hand//unnamed_geom_3" class="fr3/panda hand/visual" material="fr3/panda hand/white" mesh="fr3/panda hand/hand_3"/>
+                            <geom name="fr3/panda hand//unnamed_geom_4" class="fr3/panda hand/visual" material="fr3/panda hand/off_white" mesh="fr3/panda hand/hand_4"/>
+                            <geom name="fr3/panda hand//unnamed_geom_5" class="fr3/panda hand/collision" mesh="fr3/panda hand/hand_c"/>
+                            <body name="fr3/panda hand/left_finger" pos="0 0 0.058400000000000001">
+                              <inertial pos="0 0 0" mass="0.014999999999999999" diaginertia="2.3750000000000001e-06 2.3750000000000001e-06 7.5000000000000002e-07"/>
+                              <joint name="fr3/panda hand/finger_joint1" class="fr3/panda hand/finger"/>
+                              <geom name="fr3/panda hand//unnamed_geom_6" class="fr3/panda hand/visual" material="fr3/panda hand/off_white" mesh="fr3/panda hand/finger_0"/>
+                              <geom name="fr3/panda hand//unnamed_geom_7" class="fr3/panda hand/visual" material="fr3/panda hand/black" mesh="fr3/panda hand/finger_1"/>
+                              <geom name="fr3/panda hand//unnamed_geom_8" class="fr3/panda hand/collision" mesh="fr3/panda hand/finger_0"/>
+                              <geom name="fr3/panda hand//unnamed_geom_9" class="fr3/panda hand/fingertip_pad_collision_1"/>
+                              <geom name="fr3/panda hand//unnamed_geom_10" class="fr3/panda hand/fingertip_pad_collision_2"/>
+                              <geom name="fr3/panda hand//unnamed_geom_11" class="fr3/panda hand/fingertip_pad_collision_3"/>
+                              <geom name="fr3/panda hand//unnamed_geom_12" class="fr3/panda hand/fingertip_pad_collision_4"/>
+                              <geom name="fr3/panda hand//unnamed_geom_13" class="fr3/panda hand/fingertip_pad_collision_5"/>
+                            </body>
+                            <body name="fr3/panda hand/right_finger" pos="0 0 0.058400000000000001" quat="0 0 0 1">
+                              <inertial pos="0 0 0" mass="0.014999999999999999" diaginertia="2.3750000000000001e-06 2.3750000000000001e-06 7.5000000000000002e-07"/>
+                              <joint name="fr3/panda hand/finger_joint2" class="fr3/panda hand/finger"/>
+                              <geom name="fr3/panda hand//unnamed_geom_14" class="fr3/panda hand/visual" material="fr3/panda hand/off_white" mesh="fr3/panda hand/finger_0"/>
+                              <geom name="fr3/panda hand//unnamed_geom_15" class="fr3/panda hand/visual" material="fr3/panda hand/black" mesh="fr3/panda hand/finger_1"/>
+                              <geom name="fr3/panda hand//unnamed_geom_16" class="fr3/panda hand/collision" mesh="fr3/panda hand/finger_0"/>
+                              <geom name="fr3/panda hand//unnamed_geom_17" class="fr3/panda hand/fingertip_pad_collision_1"/>
+                              <geom name="fr3/panda hand//unnamed_geom_18" class="fr3/panda hand/fingertip_pad_collision_2"/>
+                              <geom name="fr3/panda hand//unnamed_geom_19" class="fr3/panda hand/fingertip_pad_collision_3"/>
+                              <geom name="fr3/panda hand//unnamed_geom_20" class="fr3/panda hand/fingertip_pad_collision_4"/>
+                              <geom name="fr3/panda hand//unnamed_geom_21" class="fr3/panda hand/fingertip_pad_collision_5"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <contact>
+    <exclude name="fr3//unnamed_contact_0" body1="fr3/fr3_link0" body2="fr3/fr3_link1"/>
+    <exclude name="fr3/panda hand//unnamed_contact_0" body1="fr3/panda hand/hand" body2="fr3/panda hand/left_finger"/>
+    <exclude name="fr3/panda hand//unnamed_contact_1" body1="fr3/panda hand/hand" body2="fr3/panda hand/right_finger"/>
+  </contact>
+  <equality>
+    <joint name="fr3/panda hand//unnamed_equality_0" class="fr3/panda hand/" solref="0.0050000000000000001 1" solimp="0.94999999999999996 0.98999999999999999 0.001" joint1="fr3/panda hand/finger_joint1" joint2="fr3/panda hand/finger_joint2"/>
+  </equality>
+  <tendon>
+    <fixed name="fr3/panda hand/split" class="fr3/panda hand/">
+      <joint joint="fr3/panda hand/finger_joint1" coef="0.5"/>
+      <joint joint="fr3/panda hand/finger_joint2" coef="0.5"/>
+    </fixed>
+  </tendon>
+  <actuator>
+    <position name="fr3/fr3_joint1" class="fr3/fr3" joint="fr3/fr3_joint1" kp="4500" kv="450"/>
+    <position name="fr3/fr3_joint2" class="fr3/fr3" joint="fr3/fr3_joint2" kp="4500" kv="450"/>
+    <position name="fr3/fr3_joint3" class="fr3/fr3" joint="fr3/fr3_joint3" kp="3500" kv="350"/>
+    <position name="fr3/fr3_joint4" class="fr3/fr3" joint="fr3/fr3_joint4" kp="3500" kv="350"/>
+    <position name="fr3/fr3_joint5" class="fr3/fr3" joint="fr3/fr3_joint5" kp="2000" kv="200"/>
+    <position name="fr3/fr3_joint6" class="fr3/fr3" joint="fr3/fr3_joint6" kp="2000" kv="200"/>
+    <position name="fr3/fr3_joint7" class="fr3/fr3" joint="fr3/fr3_joint7" kp="2000" kv="200"/>
+    <general name="fr3/panda hand/actuator8" class="fr3/panda hand/panda" ctrlrange="0 255" forcerange="-100 100" tendon="fr3/panda hand/split" gainprm="0.015686274510000001 0 0" biasprm="0 -100 -10"/>
+  </actuator>
+  <keyframe>
+    <key name="fr3/home" qpos="0 0 0 -1.5707899999999999 0 1.5707899999999999 -0.7853 0 0" ctrl="0 0 0 -1.5707899999999999 0 1.5707899999999999 -0.7853 0"/>
+  </keyframe>
+</mujoco>

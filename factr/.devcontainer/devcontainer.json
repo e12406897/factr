@@ -1,0 +1,45 @@
+{
+    "build": {
+        "dockerfile": "../Dockerfile"
+    },
+  "runArgs": [
+        "--gpus=all",
+        "--privileged",
+        "--net=host",
+        "-e",
+        "DISPLAY=${env:DISPLAY}",
+        "-e",
+        "QT_X11_NO_MITSHM=1"
+    ],
+    "mounts": [
+        "source=/dev/serial/by-id/,target=/dev/serial/by-id/,type=bind",
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+    ],
+    "workspaceFolder": "/factr",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/factr,type=bind",
+    "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": false,
+        "python.formatting.provider": "black",
+        "python.formatting.blackPath": "/usr/local/bin/black",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": "explicit"
+        },
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        }
+      }
+    }
+  }
+}
