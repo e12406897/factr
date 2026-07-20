@@ -17,6 +17,7 @@
     ],
     "workspaceFolder": "/factr",
     "workspaceMount": "source=${localWorkspaceFolder},target=/factr,type=bind",
+    "postCreateCommand": "bash -lc 'cd /factr && source /opt/ros/humble/setup.bash && colcon build --symlink-install && sed -i \"s#/workspace/install#/factr/install#\" ~/.bashrc'",
     "customizations": {
     "vscode": {
       "extensions": [
