@@ -131,43 +131,69 @@ class FACTRTeleop(Node, ABC):
 
     def _prepare_dynamixel(self):
         """
-        Instantiates driver for interfacing with Dynamixel servos.
+        Instantiates one driver per Dynamixel USB port, since the leader arm's motors
+        may be split across multiple physically separate serial adapters. Dynamixel
+        IDs are assumed to already be assigned 1..num_motors in joint order (arm
+        joints 1-7, then gripper), globally unique across all ports.
         """
         self.servo_types = self.config["dynamixel"]["servo_types"]
         self.num_motors = len(self.servo_types)
         self.joint_signs = np.array(self.config["dynamixel"]["joint_signs"], dtype=float)
-        assert self.num_motors == len(self.joint_signs), \
-            "The number of motors and the number of joint signs must be the same"
-        self.dynamixel_port = "/dev/serial/by-id/" + self.config["dynamixel"]["dynamixel_port"]
-
-        # checks of the latency timer on ttyUSB of the corresponding port is 1
-        # if it is not 1, the control loop cannot run at above 200 Hz, which will 
-        # cause extremely undesirable behaviour for the leader arm. If the latency 
-        # timer is not 1, one can set it to 1 as follows:
-        # echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB{NUM}/latency_timer
-        ttyUSBx = find_ttyusb(self.dynamixel_port)
-        command = f"cat /sys/bus/usb-serial/devices/{ttyUSBx}/latency_timer"        
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
-        ttyUSB_latency_timer = int(result.stdout)
-        if ttyUSB_latency_timer != 1:
-            raise Exception(
-                f"Please ensure the latency timer of {ttyUSBx} is 1. Run: \n \
-                echo 1 | sudo tee /sys/bus/usb-serial/devices/{ttyUSBx}/latency_timer"
-            )
+        servo_port_index = np.array(self.config["dynamixel"]["servo_port_index"], dtype=int)
+        assert self.num_motors == len(self.joint_signs) == len(servo_port_index), \
+            "The number of motors, joint signs, and servo_port_index entries must be the same"
 
         joint_ids = np.arange(self.num_motors) + 1
-        try:
-            self.driver = DynamixelDriver(
-                joint_ids, self.servo_types, self.dynamixel_port
-            )
-        except FileNotFoundError:
-            self.get_logger().info(f"Port {self.dynamixel_port} not found. Please check the connection.")
-            return
-        self.driver.set_torque_mode(False)
-        # set operating mode to current mode
-        self.driver.set_operating_mode(0)
-        # enable torque
-        self.driver.set_torque_mode(True)
+
+        self.drivers = []
+        self._port_motor_indices = []
+        for port_i, port_name in enumerate(self.config["dynamixel"]["ports"]):
+            dynamixel_port = "/dev/serial/by-id/" + port_name
+
+            # checks of the latency timer on ttyUSB of the corresponding port is 1
+            # if it is not 1, the control loop cannot run at above 200 Hz, which will
+            # cause extremely undesirable behaviour for the leader arm. If the latency
+            # timer is not 1, one can set it to 1 as follows:
+            # echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB{NUM}/latency_timer
+            ttyUSBx = find_ttyusb(dynamixel_port)
+            command = f"cat /sys/bus/usb-serial/devices/{ttyUSBx}/latency_timer"
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
+            ttyUSB_latency_timer = int(result.stdout)
+            if ttyUSB_latency_timer != 1:
+                raise Exception(
+                    f"Please ensure the latency timer of {ttyUSBx} is 1. Run: \n \
+                    echo 1 | sudo tee /sys/bus/usb-serial/devices/{ttyUSBx}/latency_timer"
+                )
+
+            motor_indices = np.where(servo_port_index == port_i)[0]
+            try:
+                driver = DynamixelDriver(
+                    joint_ids[motor_indices], [self.servo_types[i] for i in motor_indices], dynamixel_port
+                )
+            except FileNotFoundError:
+                self.get_logger().info(f"Port {dynamixel_port} not found. Please check the connection.")
+                return
+            driver.set_torque_mode(False)
+            # set operating mode to current mode
+            driver.set_operating_mode(0)
+            # enable torque
+            driver.set_torque_mode(True)
+
+            self.drivers.append(driver)
+            self._port_motor_indices.append(motor_indices)
+
+    def _read_all_motors(self):
+        """
+        Aggregates positions and velocities across all Dynamixel drivers into a single
+        combined array in canonical joint order (arm joints 1-7, then gripper).
+        """
+        positions = np.zeros(self.num_motors)
+        velocities = np.zeros(self.num_motors)
+        for driver, motor_indices in zip(self.drivers, self._port_motor_indices):
+            driver_positions, driver_velocities = driver.get_positions_and_velocities()
+            positions[motor_indices] = driver_positions
+            velocities[motor_indices] = driver_velocities
+        return positions, velocities
 
     def _prepare_inverse_dynamics(self):
         """
@@ -195,7 +221,7 @@ class FACTRTeleop(Node, ABC):
         """
         # warm up
         for _ in range(10):
-            self.driver.get_positions_and_velocities()
+            self._read_all_motors()
         
         def _get_error(calibration_joint_pos, offset, index, joint_state):
             joint_sign_i = self.joint_signs[index]
@@ -205,7 +231,7 @@ class FACTRTeleop(Node, ABC):
 
         # get arm offsets
         self.joint_offsets = []
-        curr_joints, _ = self.driver.get_positions_and_velocities()
+        curr_joints, _ = self._read_all_motors()
         for i in range(self.num_arm_joints):
             best_offset = 0
             best_error = 1e9
@@ -253,7 +279,8 @@ class FACTRTeleop(Node, ABC):
         Disables all torque on the leader arm and gripper during node shutdown.
         """
         self.set_leader_joint_torque(np.zeros(self.num_arm_joints), 0.0)
-        self.driver.set_torque_mode(False)
+        for driver in self.drivers:
+            driver.set_torque_mode(False)
 
     def get_leader_joint_states(self):
         """
@@ -261,7 +288,7 @@ class FACTRTeleop(Node, ABC):
         aligned with the joint conventions (range and direction) of the follower arm.
         """
         self.gripper_pos_prev = self.gripper_pos
-        joint_pos, joint_vel = self.driver.get_positions_and_velocities()
+        joint_pos, joint_vel = self._read_all_motors()
         joint_pos_arm = (
             joint_pos[0:self.num_arm_joints] - self.joint_offsets[0:self.num_arm_joints]
         ) * self.joint_signs[0:self.num_arm_joints]
@@ -303,8 +330,9 @@ class FACTRTeleop(Node, ABC):
         """
         Applies torque to the leader arm and gripper.
         """
-        arm_gripper_torque = np.append(arm_torque, gripper_torque)
-        self.driver.set_torque(arm_gripper_torque*self.joint_signs)
+        arm_gripper_torque = np.append(arm_torque, gripper_torque) * self.joint_signs
+        for driver, motor_indices in zip(self.drivers, self._port_motor_indices):
+            driver.set_torque(arm_gripper_torque[motor_indices])
 
 
     def joint_limit_barrier(self, arm_joint_pos, arm_joint_vel, gripper_joint_pos, gripper_joint_vel):

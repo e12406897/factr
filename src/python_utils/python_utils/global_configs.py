@@ -19,6 +19,7 @@
 sim_desktop_ip_address = "172.16.0.9"
 franka_left_ip_address = "172.16.0.1"
 franka_right_ip_address = "172.16.0.3"
+franka_sim_ip_address = "127.0.0.1"
 
 
 franka_right_real_zmq_addresses = {
@@ -33,4 +34,10 @@ franka_left_real_zmq_addresses = {
     "joint_torque_sub": f"tcp://{franka_left_ip_address}:5087",
     "joint_pos_cmd_pub": f"tcp://{sim_desktop_ip_address}:4098",
 
+}
+
+franka_sim_zmq_addresses = {
+    "joint_state_sub":  f"tcp://{franka_sim_ip_address}:6099",
+    "joint_torque_sub": f"tcp://{franka_sim_ip_address}:6087",
+    "joint_pos_cmd_pub": f"tcp://{franka_sim_ip_address}:6098",
 }

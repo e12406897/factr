@@ -42,7 +42,7 @@ RUN source /opt/ros/humble/setup.bash && \
     colcon build --symlink-install
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /workspace/install/setup.bash" >> /root/.bashrc
+    echo "source /factr/install/setup.bash" >> /root/.bashrc
 
 #install python dependencies
 RUN  apt update \

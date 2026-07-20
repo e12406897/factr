@@ -25,7 +25,11 @@ from sensor_msgs.msg import JointState
 
 from src.factr_teleop.factr_teleop.factr_teleop import FACTRTeleop
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
-from python_utils.global_configs import franka_left_real_zmq_addresses, franka_right_real_zmq_addresses
+from python_utils.global_configs import (
+    franka_left_real_zmq_addresses,
+    franka_right_real_zmq_addresses,
+    franka_sim_zmq_addresses,
+)
 
 
 def create_array_msg(data):
@@ -58,8 +62,10 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
             zmq_addresses = franka_left_real_zmq_addresses
         elif self.name == "right":
             zmq_addresses = franka_right_real_zmq_addresses
+        elif self.name == "sim":
+            zmq_addresses = franka_sim_zmq_addresses
         else:
-            raise ValueError(f"Invalid robot name '{self.name}'. Expected 'left' or 'right'.")
+            raise ValueError(f"Invalid robot name '{self.name}'. Expected 'left', 'right', or 'sim'.")
 
         # ZMQ publisher used to send joint position commands to the Franka follower arm
         self.franka_cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
