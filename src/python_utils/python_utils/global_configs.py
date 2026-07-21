@@ -37,7 +37,7 @@ franka_left_real_zmq_addresses = {
 }
 
 franka_sim_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_sim_ip_address}:6099",
-    "joint_torque_sub": f"tcp://{franka_sim_ip_address}:6087",
-    "joint_pos_cmd_pub": f"tcp://{franka_sim_ip_address}:6098",
+    "joint_state_sub":  f"tcp://{franka_sim_ip_address}:16099",
+    "joint_torque_sub": f"tcp://{franka_sim_ip_address}:16087",
+    "joint_pos_cmd_pub": f"tcp://{franka_sim_ip_address}:16098",
 }

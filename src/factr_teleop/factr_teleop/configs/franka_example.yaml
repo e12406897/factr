@@ -4,12 +4,12 @@ dynamixel:
   # USB port names given by the command: ls /dev/serial/by-id/
   # One entry per physically separate serial adapter.
   ports:
-    - "usb-FTDI_USB__-__Serial_Converter_FT951EJA-if00-port0"   # Port 0
-    - "usb-FTDI_USB__-__Serial_Converter_FT8ISV6J-if00-port1"   # Port 1
+    - "usb-FTDI_USB__-__Serial_Converter_FT9HD80O-if00-port0"   # Port 0
+    - "usb-FTDI_USB__-__Serial_Converter_FT9HDA6P-if00-port0"   # Port 1
   # Servo types
   servo_types: [
-    "XC330_T288_T", "XM430_W210_T", "XC330_T288_T", "XM430_W210_T",
-    "XC330_T288_T", "XC330_T288_T", "XC330_T288_T", "XC330_T288_T",
+    "XL330_M288_T", "XM430_W350_T", "XL330_M288_T", "XM430_W350_T",
+    "XL330_M288_T", "XL330_M288_T", "XL330_M288_T", "XL330_M288_T"
   ]
   # Servo joint directions to match that of the leader arm
   joint_signs: [1, 1, 1, -1, 1, -1, 1, -1]
@@ -27,9 +27,9 @@ arm_teleop:
   arm_joint_limits_safety_margin: 0.1
   initialization:
     # The expected leader arm joint position before launching the script
-    calibration_joint_pos: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0]
+    calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0]
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
-    initial_match_joint_pos: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0]
+    initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0]
   
 gripper_teleop:
   # The maximum range (in rad) of the leader gripper trigger
@@ -64,5 +64,3 @@ controller:
     enable: True
     gain: 0.28328611898
     ema_beta: 0.95
-
-

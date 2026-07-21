@@ -4,12 +4,12 @@ dynamixel:
   # USB port names given by the command: ls /dev/serial/by-id/
   # One entry per physically separate serial adapter.
   ports:
-    - "usb-FTDI_USB__-__Serial_Converter_FT951EJA-if00-port0"   # Port 0
-    - "usb-FTDI_USB__-__Serial_Converter_FT8ISV6J-if00-port1"   # Port 1
+    - "usb-FTDI_USB__-__Serial_Converter_FT9HD80O-if00-port0"   # Port 0
+    - "usb-FTDI_USB__-__Serial_Converter_FT9HDA6P-if00-port0"   # Port 1
   # Servo types
   servo_types: [
-    "XC330_T288_T", "XM430_W210_T", "XC330_T288_T", "XM430_W210_T",
-    "XC330_T288_T", "XC330_T288_T", "XC330_T288_T", "XC330_T288_T",
+    "XC330_T288_T", "XM430_W210_T", "XM430_W350_T", "XC330_T288_T", "XM430_W210_T",
+    "XC330_T288_T", "XC330_T288_T", "XC330_T288_T", "XC330_T288_T", "XL330_M288_T",
   ]
   # Servo joint directions to match that of the leader arm
   joint_signs: [1, 1, 1, -1, 1, -1, 1, -1]

@@ -32,3 +32,4 @@ urllib3==2.7.0
 wrapt==2.2.2
 zipp==4.1.0
 zmq==0.0.0
+pin

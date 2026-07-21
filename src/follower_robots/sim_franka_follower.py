@@ -336,7 +336,6 @@ class MujocoFrankaFollower:
                     self._data.ctrl[self._gripper_ctrl_adr] = self._gripper_cmd * 255
 
                 mujoco.mj_step(self._model, self._data)
-
                 self._state_pub.send_message(self._get_arm_positions())
                 self._torque_pub.send_message(self._get_arm_external_torque())
                 if self._gripper_bridge is not None:
