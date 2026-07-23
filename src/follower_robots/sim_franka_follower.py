@@ -5,10 +5,8 @@ from typing import Dict, Optional
 import mujoco
 import mujoco.viewer
 import numpy as np
-
-from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
-
 from dm_control import mjcf
+from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 
 assert mujoco.viewer is mujoco.viewer
 
@@ -46,6 +44,20 @@ def attach_hand_to_arm(
         else:
             arm_key.ctrl = np.concatenate([arm_key.ctrl, hand_key.ctrl])
             arm_key.qpos = np.concatenate([arm_key.qpos, hand_key.qpos])
+
+    # Exclude the two finger bodies from self-collision so that a closed/near-closed
+    # gripper with nothing between the fingers doesn't generate spurious contact
+    # forces that leak into qfrc_constraint (and, via the kinematic chain, into the
+    # arm's reported "external torque").
+    left_finger = hand_mjcf.find("body", "left_finger")
+    right_finger = hand_mjcf.find("body", "right_finger")
+    if left_finger is not None and right_finger is not None:
+        hand_mjcf.contact.add("exclude", body1=left_finger, body2=right_finger)
+    else:
+        print(
+            "attach_hand_to_arm: could not find 'left_finger'/'right_finger' bodies "
+            "to exclude from self-collision; check the gripper MJCF's body names."
+        )
 
     attachment_site.attach(hand_mjcf)
 
@@ -162,6 +174,7 @@ def build_scene(robot_xml_path: str, gripper_xml_path: Optional[str] = None):
 
     return arena
 
+
 class GripperROSBridge:
     """Optional rclpy side-car that lets the sim follower participate in FACTR's
     ROS-based gripper command/feedback topics, mirroring what the real Franka
@@ -184,7 +197,9 @@ class GripperROSBridge:
         self._torque_pub = self._node.create_publisher(
             JointState, f"/gripper/{name}/obs_gripper_torque", 1
         )
-        self._thread = threading.Thread(target=rclpy.spin, args=(self._node,), daemon=True)
+        self._thread = threading.Thread(
+            target=rclpy.spin, args=(self._node,), daemon=True
+        )
         self._thread.start()
 
     def _cmd_callback(self, msg) -> None:
@@ -211,6 +226,14 @@ class MujocoFrankaFollower:
     """
 
     ARM_JOINT_PREFIX = "fr3/fr3_joint"
+    _CONTACT_CONSTRAINT_TYPES = (
+        mujoco.mjtConstraint.mjCNSTR_CONTACT_FRICTIONLESS,
+        mujoco.mjtConstraint.mjCNSTR_CONTACT_PYRAMIDAL,
+        mujoco.mjtConstraint.mjCNSTR_CONTACT_ELLIPTIC,
+        mujoco.mjtConstraint.mjCNSTR_LIMIT_JOINT,             
+        mujoco.mjtConstraint.mjCNSTR_LIMIT_TENDON, 
+        mujoco.mjtConstraint.mjCNSTR_EQUALITY
+    )
 
     def __init__(
         self,
@@ -222,6 +245,7 @@ class MujocoFrankaFollower:
         enable_ros_gripper: bool = False,
         name: str = "sim",
         initial_arm_qpos: Optional[np.ndarray] = None,
+        initial_gripper_cmd: float = 0.0,
     ):
         self._num_arm_joints = num_arm_joints
         self._has_gripper = gripper_xml_path is not None
@@ -233,7 +257,9 @@ class MujocoFrankaFollower:
             if asset.tag == "mesh":
                 assets[asset.file.get_vfs_filename()] = asset.file.contents
         self._model = mujoco.MjModel.from_xml_string(arena.to_xml_string(), assets)
+        self._model.opt.jacobian = mujoco.mjtJacobian.mjJAC_DENSE
         self._data = mujoco.MjData(self._model)
+
 
         self._resolve_arm_joint_indices()
         if initial_arm_qpos is not None:
@@ -248,15 +274,22 @@ class MujocoFrankaFollower:
             self._data.ctrl[: self._num_arm_joints] = initial_arm_qpos
             mujoco.mj_forward(self._model, self._data)
         self._gripper_ctrl_adr = self._num_arm_joints if self._has_gripper else None
-        self._gripper_dof_adr = self._resolve_gripper_dof_index() if self._has_gripper else None
-        self._gripper_cmd = 0.0
+        self._gripper_dof_adr = (
+            self._resolve_gripper_dof_index() if self._has_gripper else None
+        )
+        self._gripper_cmd = initial_gripper_cmd
+        if self._has_gripper:
+            self._data.ctrl[self._gripper_ctrl_adr] = self._gripper_cmd * 255
+            mujoco.mj_forward(self._model, self._data)
 
         self._cmd_addr = zmq_addresses["joint_pos_cmd_pub"]
         self._cmd_sub = ZMQSubscriber(self._cmd_addr)
         self._state_pub = ZMQPublisher(zmq_addresses["joint_state_sub"])
         self._torque_pub = ZMQPublisher(zmq_addresses["joint_torque_sub"])
 
-        self._gripper_bridge = GripperROSBridge(self, name) if enable_ros_gripper else None
+        self._gripper_bridge = (
+            GripperROSBridge(self, name) if enable_ros_gripper else None
+        )
         self._stop_event = threading.Event()
 
     def _resolve_arm_joint_indices(self) -> None:
@@ -264,9 +297,13 @@ class MujocoFrankaFollower:
         dof_adr = []
         for i in range(1, self._num_arm_joints + 1):
             joint_name = f"{self.ARM_JOINT_PREFIX}{i}"
-            joint_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+            joint_id = mujoco.mj_name2id(
+                self._model, mujoco.mjtObj.mjOBJ_JOINT, joint_name
+            )
             if joint_id < 0:
-                raise ValueError(f"Could not find joint '{joint_name}' in the MuJoCo model.")
+                raise ValueError(
+                    f"Could not find joint '{joint_name}' in the MuJoCo model."
+                )
             qpos_adr.append(self._model.jnt_qposadr[joint_id])
             dof_adr.append(self._model.jnt_dofadr[joint_id])
         self._arm_qpos_adr = np.array(qpos_adr, dtype=int)
@@ -281,7 +318,9 @@ class MujocoFrankaFollower:
             "hand/finger_joint1",
         ]
         for joint_name in candidates:
-            joint_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+            joint_id = mujoco.mj_name2id(
+                self._model, mujoco.mjtObj.mjOBJ_JOINT, joint_name
+            )
             if joint_id >= 0:
                 return int(self._model.jnt_dofadr[joint_id])
         print(
@@ -309,43 +348,67 @@ class MujocoFrankaFollower:
     def _get_arm_velocities(self) -> np.ndarray:
         return self._data.qvel[self._arm_dof_adr].copy()
 
+    def _get_contact_torque(self, dof_adr) -> np.ndarray:
+        """Generalized force at the given DOFs from genuine contacts only.
+
+        Unlike `qfrc_constraint`, this excludes frictionloss, equality (e.g. the
+        gripper's finger coupling), and joint-limit constraints, which are internal
+        to the model rather than external interaction.
+        """
+        dof_adr = np.atleast_1d(dof_adr)
+        nefc = self._data.nefc
+        if nefc == 0:
+            return np.zeros(len(dof_adr))
+        efc_J = self._data.efc_J.reshape(nefc, self._model.nv)
+        is_contact = np.isin(self._data.efc_type[:nefc], self._CONTACT_CONSTRAINT_TYPES)
+        # breakpoint()
+        return efc_J[is_contact][:, dof_adr].T @ self._data.efc_force[:nefc][is_contact]
+
     def _get_arm_external_torque(self) -> np.ndarray:
-        return self._data.qfrc_constraint[self._arm_dof_adr].copy()
+        return self._get_contact_torque(self._arm_dof_adr)
 
     def _get_gripper_external_torque(self) -> float:
         if self._gripper_dof_adr is None:
             return 0.0
-        return float(self._data.qfrc_constraint[self._gripper_dof_adr])
+        return float(self._get_contact_torque(self._gripper_dof_adr)[0])
 
     def _apply_arm_command(self, arm_cmd: np.ndarray) -> None:
-        assert len(arm_cmd) == self._num_arm_joints, (
-            f"Expected arm command of length {self._num_arm_joints}, got {len(arm_cmd)}."
-        )
+        assert (
+            len(arm_cmd) == self._num_arm_joints
+        ), f"Expected arm command of length {self._num_arm_joints}, got {len(arm_cmd)}."
         self._data.ctrl[: self._num_arm_joints] = arm_cmd
 
     def serve(self) -> None:
-        print(f"MuJoCo FACTR follower ready. Waiting for leader commands on {self._cmd_addr} ...")
+        print(
+            f"MuJoCo FACTR follower ready. Waiting for leader commands on {self._cmd_addr} ..."
+        )
         with mujoco.viewer.launch_passive(self._model, self._data) as viewer:
             while viewer.is_running() and not self._stop_event.is_set():
                 step_start = time.time()
+                
+                viewer.opt.frame = mujoco.mjtFrame.mjFRAME_BODY
 
                 arm_cmd = self._cmd_sub.message
                 if arm_cmd is not None:
                     self._apply_arm_command(arm_cmd[: self._num_arm_joints])
                 if self._has_gripper:
                     self._data.ctrl[self._gripper_ctrl_adr] = self._gripper_cmd * 255
-
                 mujoco.mj_step(self._model, self._data)
                 self._state_pub.send_message(self._get_arm_positions())
-                self._torque_pub.send_message(self._get_arm_external_torque())
+                self._torque_pub.send_message(-self._get_arm_external_torque())
+    
                 if self._gripper_bridge is not None:
-                    self._gripper_bridge.publish_torque(self._get_gripper_external_torque())
+                    self._gripper_bridge.publish_torque(
+                        self._get_gripper_external_torque()
+                    )
 
                 if self._print_joints:
                     print(self._get_arm_positions())
 
                 viewer.sync()
-                time_until_next_step = self._model.opt.timestep - (time.time() - step_start)
+                time_until_next_step = self._model.opt.timestep - (
+                    time.time() - step_start
+                )
                 if time_until_next_step > 0:
                     time.sleep(time_until_next_step)
 

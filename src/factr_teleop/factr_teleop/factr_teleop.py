@@ -167,6 +167,7 @@ class FACTRTeleop(Node, ABC):
         # start the control loop
         self.timer = self.create_timer(self.dt, self.control_loop_callback)
 
+
     def _prepare_dynamixel(self):
         """
         Instantiates one driver per Dynamixel USB port, since the leader arm's motors
@@ -330,7 +331,7 @@ class FACTRTeleop(Node, ABC):
             )
             > 0.6
         ):
-            
+
             current_joint_error = np.linalg.norm(
                 curr_pos - self.initial_match_joint_pos[0 : self.num_arm_joints]
             )
@@ -472,6 +473,9 @@ class FACTRTeleop(Node, ABC):
             arm_joint_vel,
             np.zeros_like(arm_joint_vel),
         )
+
+        self.external_torque_list.put(external_torque)
+        mean_ext_torque = np.mean(np.array(list(self.external_torque_list)), axis=0)
         self.tau_g *= self.gravity_comp_modifier
         return self.tau_g
 
@@ -523,6 +527,7 @@ class FACTRTeleop(Node, ABC):
 
         This method implements Equation 1 in Section III.A of the paper.
         """
+
         tau_ff = (
             -1.0
             * self.torque_feedback_gain
@@ -530,6 +535,7 @@ class FACTRTeleop(Node, ABC):
             * external_torque
         )
         tau_ff -= self.torque_feedback_damping * arm_joint_vel
+
         return tau_ff
 
     def control_loop_callback(self):

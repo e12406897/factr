@@ -31,6 +31,10 @@ class Args:
     # to match your teleop config's `initial_match_joint_pos` so the sim and leader line
     # up visually before the first command arrives.
     initial_arm_qpos: Optional[Tuple[float, float, float, float, float, float, float]] = None
+    # sim_fr3_franka only: initial gripper command (radians, same convention as
+    # `leader_gripper_pos`). Set this to your teleop config's `gripper_teleop.actuation_range`
+    # (fully open) so the fingers don't self-contact before the leader sends a command.
+    initial_gripper_cmd: float = 0.0
 
 
 def launch_robot_server(args: Args):
@@ -48,6 +52,7 @@ def launch_robot_server(args: Args):
         enable_ros_gripper=args.enable_ros_gripper,
         name=args.follower_name,
         initial_arm_qpos=args.initial_arm_qpos,
+        initial_gripper_cmd=args.initial_gripper_cmd,
     )
     follower.serve()
     
