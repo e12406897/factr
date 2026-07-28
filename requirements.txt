@@ -33,3 +33,5 @@ wrapt==2.2.2
 zipp==4.1.0
 zmq==0.0.0
 pin
+matplotlib==3.10.5
+pillow==11.3.0

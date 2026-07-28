@@ -35,6 +35,8 @@ class Args:
     # `leader_gripper_pos`). Set this to your teleop config's `gripper_teleop.actuation_range`
     # (fully open) so the fingers don't self-contact before the leader sends a command.
     initial_gripper_cmd: float = 0.0
+    enable_var_scale_feedback: bool = False
+    var_scale_factor: float = 10
 
 
 def launch_robot_server(args: Args):
@@ -50,6 +52,8 @@ def launch_robot_server(args: Args):
         gripper_xml_path=gripper_xml,
         zmq_addresses=franka_sim_zmq_addresses,
         enable_ros_gripper=args.enable_ros_gripper,
+        enable_var_scale_feedback=args.enable_var_scale_feedback,
+        var_scale_factor=args.var_scale_factor,
         name=args.follower_name,
         initial_arm_qpos=args.initial_arm_qpos,
         initial_gripper_cmd=args.initial_gripper_cmd,

@@ -77,10 +77,12 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
         self.franka_cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
         # ZMQ subscriber used to get the current joint position and velocity of the Franka follower arm
         self.franka_joint_state_sub = ZMQSubscriber(zmq_addresses["joint_state_sub"])
+        
         # ROS publisher for re-publishing the current joint states of the Franka follower arm
         self.obs_franka_state_pub = self.create_publisher(
             JointState, f"/franka/{self.name}/obs_franka_state", 10
         )
+
         # ROS publisher for re-publishing Franka and gripper commands
         self.cmd_franka_pos_pub = self.create_publisher(
             JointState, f"/factr_teleop/{self.name}/cmd_franka_pos", 10
@@ -88,10 +90,13 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
         self.cmd_gripper_pos_pub = self.create_publisher(
             JointState, f"/factr_teleop/{self.name}/cmd_gripper_pos", 10
         )
-
+        
         if self.enable_torque_feedback:
             # ZMQ subscriber used to get the extenral joint torque from the Franka follower arm
             self.franka_torque_sub = ZMQSubscriber(zmq_addresses["joint_torque_sub"])
+            # self.franka_torque_lpass_sub = ZMQSubscriber(zmq_addresses["lpass_filter_sub"])
+            self.franka_torque_raw_sub = ZMQSubscriber(zmq_addresses["raw_joint_torque_sub"])
+
             while self.franka_torque_sub.message is None:
                 self.get_logger().info(
                     f"Has not received Franka {self.name}'s external joint torques"
@@ -101,6 +106,24 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
             self.obs_franka_torque_pub = self.create_publisher(
                 JointState, f"/franka/{self.name}/obs_franka_torque", 10
             )
+
+            # while self.franka_torque_lpass_sub.message is None:
+            #                 self.get_logger().info(
+            #                     f"Has not received Franka {self.name}'s filtered external joint torques"
+            #                 )
+            #                 time.sleep(0.1)
+            # self.obs_franka_torque_lpass_pub = self.create_publisher(
+            #                 JointState, f"/franka/{self.name}/obs_franka_torque_lpass", 10
+            #             )
+            
+            while self.franka_torque_raw_sub.message is None:
+                            self.get_logger().info(
+                                f"Has not received Franka {self.name}'s raw external joint torques"
+                            )
+                            time.sleep(0.1)
+            self.obs_franka_torque_raw_pub = self.create_publisher(
+                            JointState, f"/franka/{self.name}/obs_franka_torque_raw", 10
+                        )
 
         if self.enable_gripper_feedback:
             # ROS subscriber for getting the gripper's torque information
@@ -128,9 +151,16 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
         return torque_gripper
 
     def get_leader_arm_external_joint_torque(self):
+        external_torque_raw = self.franka_torque_raw_sub.message
+        # external_torque_filtered = self.franka_torque_lpass_sub.message
         external_torque = self.franka_torque_sub.message
+        
         # re-publishe Franka external joint torque to ROS
+        self.obs_franka_torque_raw_pub.publish(create_array_msg(external_torque_raw))
+        # self.obs_franka_torque_lpass_pub.publish(create_array_msg(external_torque_filtered))
         self.obs_franka_torque_pub.publish(create_array_msg(external_torque))
+        
+
         return external_torque
 
     def update_communication(self, leader_arm_pos, leader_gripper_pos):
