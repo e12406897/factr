@@ -96,79 +96,25 @@ cd <repo_root>/src/factr_teleop/factr_teleop/dynamixel
 pip install -e python
 ```
 
+Before starting the Dev Container connect the power hub boards with your PC and check if you find them:
+
+Then set and build your container
+```bash
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
+```
 
 ## FACTR Teleop
-Instructions for setting up FACTR leader arms and running the provided example demos can be found 
-[here](src/factr_teleop/README.md).
 
-
-
-## Data Collection
-We provide instructions and sample data collection scripts in ROS2. You might need your custom nodes for robots and sensors to run the system. In our case, the collected data is saved in following format:
-### Data Structure
-Each trajectory is saved as a separate pickle file. Each pickle file contains a dictionary with the following structure:
-```
-trajectory.pkl
-├── "data" : dict
-│   ├── "topic_name_1" : list[data_points]
-│   ├── "topic_name_2" : list[data_points]
-│   └── ...
-└── "timestamps" : dict
-    ├── "topic_name_1" : list[timestamps]
-    ├── "topic_name_2" : list[timestamps]
-    └── ...
-```
-### Key Components:
-
-- **data**: A dictionary where:
-  - Keys are the data source names (ROS topic names in our implementation)
-  - Values are lists containing the actual data points (low-dimensional states or images)
-
-- **timestamps**: A dictionary where:
-  - Keys are the same data source names as in the "data" dictionary
-  - Values are lists containing the timestamps when each corresponding data point was recorded
-
-*Note*: Different data sources may log at different frequencies, resulting in varying list lengths across data sources. The timestamps are crucial for properly aligning and post-processing the data.
-While ROS provides synchronization APIs, we chose to record raw timestamps and perform post-processing to allow for greater flexibility in data analysis and alignment.
-```python
-# Example of a trajectory structure
-{
-    "data": {
-        "/camera/rgb/image_raw": [image1, image2, ...],
-        "/joint_states": [state1, state2, ...],
-        "/robot/end_effector_pose": [pose1, pose2, ...]
-    },
-    "timestamps": {
-        "/camera/rgb/image_raw": [1615420323.45, 1615420323.55, ...],
-        "/joint_states": [1615420323.40, 1615420323.50, ...],
-        "/robot/end_effector_pose": [1615420323.42, 1615420323.52, ...]
-    }
-}
-```
-
-
-
-## Training and Deployment
-
-### Data Processing and Training
-Please check for detailed instructions in our [factr](https://github.com/RaindragonD/factr) repo.
-
-### Policy Rollout
-
-We provide a sample rollout script in ROS2. In our case, the rollout launch file could be called as follows: 
+When using Simulation instead of real robot setup, run the following to start the simulation:
 ```bash
-ros2 launch factr_teleop/launch/rollout.py
+python launch/mujoco_sim.py --initial_arm_qpos 0 0 0 -1.57 0 1.57 0 --initial_gripper_cmd 0.8
 ```
-Please checkout [rollout.py](launch/rollout.py) for details about configurations.
 
-
-## License and Acknowledgements
-This source code is licensed under the Apache 2.0 liscence found in the LICENSE file in the root directory of this repository.
-
-This project builds on top of or utilizes the following third party dependencies.
-- [GELLO](https://wuphilipp.github.io/gello_site/): Inpiration for this work.
-- [ZMQ](https://zeromq.org/): Light-weight communication between python processes.
-- [Pinocchio](https://stack-of-tasks.github.io/pinocchio/): Fast kinematics and dynamics computation for manipulation.
+Then launch the teleoperation function with ROS2
+```bash
+ros2 launch launch/factr_teleop.py
+```
 
 
 ## Citation

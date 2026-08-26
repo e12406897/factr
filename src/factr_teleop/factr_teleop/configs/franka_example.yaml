@@ -16,7 +16,7 @@ dynamixel:
   # Which port (index into `ports` above) Dynamixel ID i+1 is wired to, in the same
   # order as servo_types/joint_signs (arm joints 1-7, then gripper). Dynamixel IDs are
   # assumed to already be assigned 1..8 in this joint order across both ports.
-  servo_port_index: [0, 1, 0, 1, 0, 0, 0, 0]
+  servo_port_index: [1, 0, 1, 0, 1, 1, 1, 1]
   
 arm_teleop:
   # URDF used for creating leader arm dynamics model to compute gravity compensation
@@ -33,21 +33,21 @@ arm_teleop:
   
 gripper_teleop:
   # The maximum range (in rad) of the leader gripper trigger
-  actuation_range: 0.8
+  actuation_range: 1
 
 controller:
   frequency: 500
   torque_feedback:
     enable: True
-    gain: [0.1, 0.25, 0.1, 0.25, 0.1, 0.1, 0.1]
+    gain: [0.5, 0.25, 0.1, 0.25, 0.1, 0.1, 0.1]
     damping: 0
-    motor_scalar: [87, 87, 87, 87, 12, 12, 12] # 94.5652173913
+    motor_scalar: [87, 87, 87, 87, 12, 12, 12] 
   gravity_comp:
-    enable: False
-    gain: 0.1
+    enable: True
+    gain: 0.3
   null_space_regulation:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
-    kp: 0.1
+    kp:  0.1
     kd: 0.01
   static_friction_comp:
     enable_speed: 0.9
@@ -61,6 +61,6 @@ controller:
     kd: 0.04315069084
 
   gripper_feedback:
-    enable: False
-    gain: 0.28328611898
+    enable: True
+    gain: 4
     ema_beta: 0.95

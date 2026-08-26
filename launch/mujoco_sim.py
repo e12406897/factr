@@ -9,13 +9,12 @@ import tyro
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "python_utils"))
 from python_utils.global_configs import franka_sim_zmq_addresses
+
 from src.follower_robots.sim_franka_follower import MujocoFrankaFollower
-MENAGERIE_ROOT: Path = (
-    Path(__file__).parent.parent / "src" / "mujoco_menagerie"
-)
+
+MENAGERIE_ROOT: Path = Path(__file__).parent.parent / "src" / "mujoco_menagerie"
 xml = MENAGERIE_ROOT / "franka_fr3" / "fr3.xml"
 gripper_xml = MENAGERIE_ROOT / "franka_emika_panda" / "hand.xml"
-    
 
 
 @dataclass
@@ -26,27 +25,28 @@ class Args:
     # sim_fr3_franka only: leader/follower name, must match the teleop config's `name` field in factr_teleop_franka_zmq.py
     follower_name: str = "sim"
     # sim_fr3_franka only: mirror the real Franka's ROS gripper command/feedback topics
-    enable_ros_gripper: bool = False
+    enable_ros_gripper: bool = True
     # sim_fr3_franka only: initial arm joint configuration (7 values, radians). Set this
     # to match your teleop config's `initial_match_joint_pos` so the sim and leader line
     # up visually before the first command arrives.
-    initial_arm_qpos: Optional[Tuple[float, float, float, float, float, float, float]] = None
+    initial_arm_qpos: Optional[
+        Tuple[float, float, float, float, float, float, float]
+    ] = None
     # sim_fr3_franka only: initial gripper command (radians, same convention as
     # `leader_gripper_pos`). Set this to your teleop config's `gripper_teleop.actuation_range`
     # (fully open) so the fingers don't self-contact before the leader sends a command.
-    initial_gripper_cmd: float = 0.0
-    enable_var_scale_feedback: bool = False
+    initial_gripper_cmd: float = 0.8
+    enable_var_scale_feedback: bool = True
     var_scale_factor: float = 10
 
 
 def launch_robot_server(args: Args):
     port = args.robot_port
-    
+
     # Makes the sim speak FACTR's ZMQ PUB/SUB protocol directly, acting as a
     # drop-in replacement for the real Franka follower so that the unmodified
     # `factr_teleop_franka_zmq` leader node can teleoperate the sim.
 
-    
     follower = MujocoFrankaFollower(
         xml_path=xml,
         gripper_xml_path=gripper_xml,
@@ -59,8 +59,6 @@ def launch_robot_server(args: Args):
         initial_gripper_cmd=args.initial_gripper_cmd,
     )
     follower.serve()
-    
-        
 
 
 def main(args):

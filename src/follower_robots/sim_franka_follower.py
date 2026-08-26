@@ -9,9 +9,6 @@ import mujoco.viewer
 import numpy as np
 from dm_control import mjcf
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
-from scipy.signal import butter, lfilter
-import pyqtgraph as pg
-from PyQt6 import QtWidgets
 
 assert mujoco.viewer is mujoco.viewer
 
@@ -150,7 +147,7 @@ def build_scene(robot_xml_path: str, gripper_xml_path: Optional[str] = None):
 
     # Peg: square box, starts on the table next to the hole
     peg_body = arena.worldbody.add(
-        "body", name="peg", pos=[table_x - 0.15, table_y, table_z + table_ht + 0.04]
+        "body", name="peg", pos=[table_x - 0.15, table_y, table_z + table_ht + 0.15]
     )
     peg_body.add(
         "inertial", pos=[0, 0, 0], mass=0.1, diaginertia=[0.0001, 0.0001, 0.00005]
@@ -161,6 +158,7 @@ def build_scene(robot_xml_path: str, gripper_xml_path: Optional[str] = None):
         type="box",
         size=[0.02, 0.02, 0.04],  # 4x4cm cross-section, 8cm tall
         rgba=[0.8, 0.3, 0.3, 1],
+        friction=[1, 0.005, 0.0001],
         name="peg_geom",
     )
 
@@ -178,122 +176,6 @@ def build_scene(robot_xml_path: str, gripper_xml_path: Optional[str] = None):
     # arena.worldbody.attach(arm_copy)
 
     return arena
-
-
-class VectorRealtimeLowpass:
-    def __init__(
-        self,
-        cutoff_hz,
-        fs_hz,
-        n_channels,
-        order=2,
-        history_seconds=10,
-        debug=False,
-    ):  
-        self.debug = debug
-        self.fs_hz = fs_hz
-        self.iteration = 0
-
-        self.b, self.a = butter(order, cutoff_hz, fs=fs_hz, btype="low")
-        self.zi = np.zeros((n_channels, max(len(self.a), len(self.b)) - 1))
-
-        if self.debug:
-            # ----------------------------
-            # Qt application
-            # ----------------------------
-            self.app = QtWidgets.QApplication.instance()
-            if self.app is None:
-                self.app = QtWidgets.QApplication(sys.argv)
-
-            self.win = pg.GraphicsLayoutWidget(
-                show=True,
-                title="Realtime Lowpass Filter"
-            )
-            self.win.resize(1000, 250 * n_channels)
-
-            # ----------------------------
-            # Circular buffers
-            # ----------------------------
-            self.history = int(history_seconds * fs_hz)
-
-            self.t = np.linspace(
-                -history_seconds,
-                0,
-                self.history,
-            )
-
-            self.raw_data = np.zeros((n_channels, self.history))
-            self.filtered_data = np.zeros((n_channels, self.history))
-
-            self.raw_curves = []
-            self.filtered_curves = []
-
-            for i in range(n_channels):
-                plot = self.win.addPlot(row=i, col=0)
-
-                plot.showGrid(x=True, y=True)
-                plot.setLabel("left", f"ch{i}")
-                plot.setLabel("bottom", "Time [s]")
-
-                plot.addLegend()
-
-                raw = plot.plot(
-                    self.t,
-                    self.raw_data[i],
-                    pen=pg.mkPen("r", width=1),
-                    name="raw",
-                )
-
-                filt = plot.plot(
-                    self.t,
-                    self.filtered_data[i],
-                    pen=pg.mkPen("g", width=2),
-                    name="filtered",
-                )
-
-                self.raw_curves.append(raw)
-                self.filtered_curves.append(filt)
-
-    def step(self, x: np.ndarray) -> np.ndarray:
-        self.iteration += 1
-
-        y = np.empty_like(x)
-
-        for i in range(len(x)):
-            y_i, self.zi[i] = lfilter(
-                self.b,
-                self.a,
-                [x[i]],
-                zi=self.zi[i],
-            )
-
-            y[i] = y_i[0]
-
-        if self.debug:
-            # Shift buffers left by one sample
-            self.raw_data[:, :-1] = self.raw_data[:, 1:]
-            self.filtered_data[:, :-1] = self.filtered_data[:, 1:]
-
-            # Insert newest sample
-            self.raw_data[:, -1] = x
-            self.filtered_data[:, -1] = y
-
-        return y
-
-    def update_stream(self):
-        for i in range(self.raw_data.shape[0]):
-            self.raw_curves[i].setData(
-                self.t,
-                self.raw_data[i],
-            )
-
-            self.filtered_curves[i].setData(
-                self.t,
-                self.filtered_data[i],
-            )
-
-        self.app.processEvents()
-        
 
 
 class GripperROSBridge:
@@ -408,21 +290,20 @@ class MujocoFrankaFollower:
         self._cmd_sub = ZMQSubscriber(self._cmd_addr)
         self._state_pub = ZMQPublisher(zmq_addresses["joint_state_sub"])
         self._torque_pub = ZMQPublisher(zmq_addresses["joint_torque_sub"])
-        
 
         self._gripper_bridge = (
             GripperROSBridge(self, name) if enable_ros_gripper else None
         )
         self._stop_event = threading.Event()
 
-        sample_rate_hz = 1.0 / self._model.opt.timestep
-        self.lpass = VectorRealtimeLowpass(
-            cutoff_hz=5,
-            fs_hz=sample_rate_hz,
-            n_channels=num_arm_joints,
-            order=2,
-            debug=False
-        )
+        # sample_rate_hz = 1.0 / self._model.opt.timestep
+        # self.lpass = VectorRealtimeLowpass(
+        #     cutoff_hz=5,
+        #     fs_hz=sample_rate_hz,
+        #     n_channels=num_arm_joints,
+        #     order=2,
+        #     debug=False
+        # )
         self.enable_var_scale_feedback = enable_var_scale_feedback
         self.var_scale_factor = var_scale_factor
         self.ext_arm_torque_prev = np.zeros(num_arm_joints)
@@ -454,6 +335,7 @@ class MujocoFrankaFollower:
         # Panda hand joint naming depends on the attached menagerie asset. Try the
         # common candidates; fall back to no gripper torque feedback if none match.
         candidates = [
+            "fr3/panda hand/finger_joint1",
             "fr3/hand/finger_joint1",
             "fr3/finger_joint1",
             "hand/finger_joint1",
@@ -480,9 +362,6 @@ class MujocoFrankaFollower:
             print(joint_id, name)
         return names
 
-    def set_gripper_command(self, value: float) -> None:
-        self._gripper_cmd = value
-
     def _get_arm_positions(self) -> np.ndarray:
         return self._data.qpos[self._arm_qpos_adr].copy()
 
@@ -501,71 +380,71 @@ class MujocoFrankaFollower:
         if nefc == 0:
             return np.zeros(len(dof_adr))
         efc_J = self._data.efc_J.reshape(nefc, self._model.nv)
-        
+
         is_contact = np.isin(self._data.efc_type[:nefc], self._CONTACT_CONSTRAINT_TYPES)
 
         return efc_J[is_contact][:, dof_adr].T @ self._data.efc_force[:nefc][is_contact]
 
-
     def _get_arm_external_torque(self) -> np.ndarray:
-
-        
 
         ### v1
         # return self._get_contact_torque(self._arm_dof_adr)
 
         ###v2
+        curr_ext_torque = self._get_contact_torque(self._arm_dof_adr)
+
         if self.enable_var_scale_feedback:
-            curr_ext_torque = self._get_contact_torque(self._arm_dof_adr)
 
             for i in range(len(curr_ext_torque)):
                 delta = curr_ext_torque[i] - self.ext_arm_torque_prev[i]
-                if abs(curr_ext_torque[i]) - abs(self.ext_arm_torque_prev[i])>0:
+                if abs(curr_ext_torque[i]) - abs(self.ext_arm_torque_prev[i]) > 0:
 
                     scale = np.tanh(self.var_scale_factor * abs(delta)) / (
                         self.var_scale_factor * abs(delta) + 1e-8
                     )
                     self.ext_arm_torque_prev[i] += delta * scale
-                    
+
                 else:
                     self.ext_arm_torque_prev[i] = curr_ext_torque[i]
 
         else:
-            curr_ext_torque = self._get_contact_torque(self._arm_dof_adr)
             self.ext_arm_torque_prev = curr_ext_torque
 
         self._raw_torque_pub.send_message(curr_ext_torque)
 
         return self.ext_arm_torque_prev
 
-        ### v3
-        # ext_torque, self.ext_arm_force_prev = self._get_contact_torque_filtered(self._arm_dof_adr, self.ext_arm_force_prev)
-
-        # return ext_torque
-
     def _get_gripper_external_torque(self) -> float:
         if self._gripper_dof_adr is None:
             return 0.0
 
+        curr_ext_torque = float(self._get_contact_torque(self._gripper_dof_adr)[0])
         if self.enable_var_scale_feedback:
-            curr_feedback = float(self._get_contact_torque(self._gripper_dof_adr)[0])
-            self.ext_gripper_torque_prev += (
-                (curr_feedback - self.ext_gripper_torque_prev)
-                * 1
-                / (1 + self.var_scale_factor * abs(curr_feedback))
-            )
+
+            delta = curr_ext_torque - self.ext_gripper_torque_prev
+            if abs(curr_ext_torque) - abs(self.ext_gripper_torque_prev) > 0:
+
+                scale = np.tanh(self.var_scale_factor * abs(delta)) / (
+                    self.var_scale_factor * abs(delta) + 1e-8
+                )
+                self.ext_gripper_torque_prev += delta * scale
+
+            else:
+                self.ext_gripper_torque_prev = curr_ext_torque
+
         else:
-            self.ext_gripper_torque_prev = float(
-                self._get_contact_torque(self._gripper_dof_adr)[0]
-            )
+            self.ext_gripper_torque_prev = curr_ext_torque
 
         return self.ext_gripper_torque_prev
 
     def _apply_arm_command(self, arm_cmd: np.ndarray) -> None:
-        assert len(arm_cmd) == self._num_arm_joints, (
-            f"Expected arm command of length {self._num_arm_joints}, got {len(arm_cmd)}."
-        )
+        assert (
+            len(arm_cmd) == self._num_arm_joints
+        ), f"Expected arm command of length {self._num_arm_joints}, got {len(arm_cmd)}."
         self._data.ctrl[: self._num_arm_joints] = arm_cmd
+
+    def set_gripper_command(self, value: float) -> None:
+        self._gripper_cmd = value
 
     def serve(self) -> None:
         print(
@@ -574,8 +453,6 @@ class MujocoFrankaFollower:
         with mujoco.viewer.launch_passive(self._model, self._data) as viewer:
             while viewer.is_running() and not self._stop_event.is_set():
                 step_start = time.time()
-
-                viewer.opt.frame = mujoco.mjtFrame.mjFRAME_BODY
 
                 arm_cmd = self._cmd_sub.message
                 if arm_cmd is not None:
@@ -587,8 +464,9 @@ class MujocoFrankaFollower:
                 self._torque_pub.send_message(-self._get_arm_external_torque())
 
                 if self._gripper_bridge is not None:
+                    print(self._get_gripper_external_torque())
                     self._gripper_bridge.publish_torque(
-                        self._get_gripper_external_torque()
+                        -self._get_gripper_external_torque()
                     )
 
                 if self._print_joints:

@@ -1,44 +1,69 @@
 {
+    "name": "FACTR ROS2",
+
     "build": {
-        "dockerfile": "../Dockerfile"
+        "dockerfile": "../Dockerfile",
+        "context": "..",
+        "args": {
+            "USERNAME": "asl_team",
+            "USER_UID": "10416207",
+            "USER_GID": "10400513"
+        }
     },
-  "runArgs": [
-    "--gpus=all",
-    "--privileged",
-    "-e", "DISPLAY=${env:DISPLAY}",
-    "-e", "QT_X11_NO_MITSHM=1"
+
+    "remoteUser": "asl_team",
+
+    "workspaceFolder": "/factr",
+
+    "workspaceMount": "source=${localWorkspaceFolder},target=/factr,type=bind",
+
+    "runArgs": [
+        "--gpus=all",
+        "--privileged",
+        "-e",
+        "DISPLAY=${env:DISPLAY}",
+        "-e",
+        "QT_X11_NO_MITSHM=1"
     ],
-  "mounts": [
+
+    "mounts": [
         "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
         "source=/dev/serial/by-id,target=/dev/serial/by-id,type=bind"
     ],
-    "workspaceFolder": "/factr",
-    "workspaceMount": "source=${localWorkspaceFolder},target=/factr,type=bind",
-    "postCreateCommand": "bash -lc 'cd /factr && source /opt/ros/humble/setup.bash && colcon build --symlink-install && sed -i \"s#/workspace/install#/factr/install#\" ~/.bashrc'",
-    "postStartCommand": "bash -lc 'fuser -k 16098/tcp 16099/tcp 16087/tcp 2>/dev/null; true'",
+
+    "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && rosdep update && rosdep install --from-paths src --ignore-src -r -y && colcon build --symlink-install'",
+
+    "postStartCommand": "bash -lc 'fuser -k 16098/tcp 16099/tcp 16087/tcp 2>/dev/null || true'",
+
     "customizations": {
-    "vscode": {
-      "extensions": [
-        "ms-python.python",
-        "ms-python.vscode-pylance",
-        "ms-python.black-formatter",
-        "ms-python.isort",
-        "charliermarsh.ruff"
-      ],
-      "settings": {
-        "python.defaultInterpreterPath": "/usr/bin/python3",
-        "python.linting.enabled": true,
-        "python.linting.pylintEnabled": false,
-        "python.formatting.provider": "black",
-        "python.formatting.blackPath": "/usr/local/bin/black",
-        "editor.formatOnSave": true,
-        "editor.codeActionsOnSave": {
-          "source.organizeImports": "explicit"
-        },
-        "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter"
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.black-formatter",
+                "ms-python.isort",
+                "charliermarsh.ruff"
+            ],
+
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/bin/python3",
+
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": false,
+
+                "python.formatting.provider": "black",
+                "python.formatting.blackPath": "/usr/local/bin/black",
+
+                "editor.formatOnSave": true,
+
+                "editor.codeActionsOnSave": {
+                    "source.organizeImports": "explicit"
+                },
+
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter"
+                }
+            }
         }
-      }
     }
-  }
 }
