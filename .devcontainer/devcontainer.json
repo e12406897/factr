@@ -23,7 +23,11 @@
         "-e",
         "DISPLAY=${env:DISPLAY}",
         "-e",
-        "QT_X11_NO_MITSHM=1"
+        "QT_X11_NO_MITSHM=1",
+        "--network=host",
+        "--cap-add=SYS_NICE",
+        "--ulimit=rtprio=99",
+        "--ulimit=memlock=-1"
     ],
 
     "mounts": [
@@ -31,8 +35,7 @@
         "source=/dev/serial/by-id,target=/dev/serial/by-id,type=bind"
     ],
 
-    "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && rosdep update && rosdep install --from-paths src --ignore-src -r -y && colcon build --symlink-install'",
-
+    "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && vcs import src < src/franka_ros2/dependency.repos --recursive --skip-existing && rosdep update && rosdep install --from-paths src --ignore-src -r -y && colcon build --symlink-install --packages-select libfranka --cmake-args -DBUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'",
     "postStartCommand": "bash -lc 'fuser -k 16098/tcp 16099/tcp 16087/tcp 2>/dev/null || true'",
 
     "customizations": {
@@ -42,7 +45,7 @@
                 "ms-python.vscode-pylance",
                 "ms-python.black-formatter",
                 "ms-python.isort",
-                "charliermarsh.ruff"
+                "charliermarshar.ruff"
             ],
 
             "settings": {

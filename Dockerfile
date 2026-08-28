@@ -49,16 +49,50 @@ RUN add-apt-repository universe && \
     rm /tmp/ros2-apt-source.deb
 
 # ============================================================
-# ROS 2 Humble
+# ROS 2 Humble + workspace dependencies
 # ============================================================
 
 RUN apt-get update && \
     apt-get install -y \
         ros-humble-ros-base \
+        ros-humble-xacro \
+        ros-humble-gz-ros2-control \
+        ros-humble-joint-state-publisher \
+        ros-humble-joint-state-broadcaster \
+        ros-humble-joint-state-publisher-gui \
+        ros-humble-rviz2 \
+        ros-humble-joy \
+        ros-humble-teleop-twist-joy \
+        ros-humble-teleop-twist-keyboard \
+        ros-humble-realsense2-camera \
+        ros-humble-realsense2-description \
+        ros-humble-sick-safetyscanners2 \
+        ros-humble-ros-gz \
+        ros-humble-sdformat-urdf \
+        ros-humble-ros2controlcli \
+        ros-humble-moveit-ros-move-group \
+        ros-humble-moveit-kinematics \
+        ros-humble-moveit-planners-ompl \
+        ros-humble-moveit-ros-visualization \
+        ros-humble-joint-trajectory-controller \
+        ros-humble-moveit-simple-controller-manager \
+        ros-humble-moveit-msgs \
+        ros-humble-ament-cmake-clang-format \
+        ros-humble-ament-cmake-clang-tidy \
+        ros-humble-pinocchio \
+        ros-humble-hardware-interface-testing \
+        ros-humble-ros2-control-test-assets \
+        ros-humble-diff-drive-controller \
+        python3-requests \
+        libpoco-dev \
+        libgtest-dev \
         python3-colcon-common-extensions \
         python3-vcstool \
         python3-rosdep \
-    && rm -rf /var/lib/apt/lists/*
+        iproute2 \
+        iputils-ping \
+        netcat-openbsd && \
+        rm -rf /var/lib/apt/lists/*
 
 # ============================================================
 # rosdep
@@ -135,8 +169,10 @@ RUN groupadd \
 # ============================================================
 # User shell configuration
 # ============================================================
-
-RUN echo "source /opt/ros/humble/setup.bash" \
+    
+RUN echo "source /opt/ros/humble/setup.bash"\
+        >> /home/${USERNAME}/.bashrc && \
+    echo 'source /factr/install/setup.bash' \
         >> /home/${USERNAME}/.bashrc && \
     echo "alias python=python3" \
         >> /home/${USERNAME}/.bashrc

@@ -28,7 +28,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState, Image
 
-from src.bc.bc.utils import create_joint_state_msg
+from FACTR.bc.bc.utils import create_joint_state_msg
 
 class Rollout(Node):
     def __init__(self):

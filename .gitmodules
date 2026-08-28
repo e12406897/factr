@@ -1,3 +1,7 @@
 [submodule "src/mujoco_menagerie"]
 	path = src/mujoco_menagerie
 	url = https://github.com/google-deepmind/mujoco_menagerie.git
+[submodule "src/franka_ros2"]
+	path = src/franka_ros2
+	url = https://github.com/frankarobotics/franka_ros2.git
+	branch = humble

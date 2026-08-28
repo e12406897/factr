@@ -29,7 +29,7 @@ from python_utils.global_configs import (
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from sensor_msgs.msg import JointState
 
-from factr_teleop.factr_teleop import FACTRTeleop
+from FACTR.factr_teleop.factr_teleop import FACTRTeleop
 
 
 def create_array_msg(data):

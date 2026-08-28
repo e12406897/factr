@@ -28,7 +28,7 @@ from pathlib import Path
 from pynput import keyboard
 from collections import deque, defaultdict
 
-from src.bc.bc.rollout import Rollout
+from FACTR.bc.bc.rollout import Rollout
 
 def process_image(image):
     """

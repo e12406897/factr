@@ -27,7 +27,7 @@ import yaml
 from python_utils.utils import get_workspace_root
 from rclpy.node import Node
 
-from factr_teleop.dynamixel.driver import DynamixelDriver
+from FACTR.factr_teleop.factr_teleop.dynamixel.driver import DynamixelDriver
 
 
 def find_ttyusb(port_name):

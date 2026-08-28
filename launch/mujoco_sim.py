@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "python_utils"))
 from python_utils.global_configs import franka_sim_zmq_addresses
 
-from src.follower_robots.sim_franka_follower import MujocoFrankaFollower
+from FACTR.follower_robots.sim_franka_follower import MujocoFrankaFollower
 
 MENAGERIE_ROOT: Path = Path(__file__).parent.parent / "src" / "mujoco_menagerie"
 xml = MENAGERIE_ROOT / "franka_fr3" / "fr3.xml"
