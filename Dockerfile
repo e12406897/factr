@@ -33,20 +33,18 @@ RUN locale-gen en_US en_US.UTF-8 && \
     update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
 # ============================================================
-# ROS 2 repository
+# ROS 2 Humble - July 2023 snapshot
 # ============================================================
 
 RUN add-apt-repository universe && \
     apt-get update && \
-    export ROS_APT_SOURCE_VERSION=$( \
-        curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest \
-        | grep -F "tag_name" \
-        | awk -F'"' '{print $4}' \
-    ) && \
-    curl -L -o /tmp/ros2-apt-source.deb \
-        "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME})_all.deb" && \
-    dpkg -i /tmp/ros2-apt-source.deb && \
-    rm /tmp/ros2-apt-source.deb
+    apt-get install -y curl gnupg ca-certificates && \
+    apt-key adv \
+        --keyserver hkp://keyserver.ubuntu.com:80 \
+        --recv-key 4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA && \
+    echo "deb http://snapshots.ros.org/humble/2023-07-24/ubuntu \
+        $(. /etc/os-release && echo ${UBUNTU_CODENAME}) main" \
+        > /etc/apt/sources.list.d/ros2.list
 
 # ============================================================
 # ROS 2 Humble + workspace dependencies
@@ -56,7 +54,6 @@ RUN apt-get update && \
     apt-get install -y \
         ros-humble-ros-base \
         ros-humble-xacro \
-        ros-humble-gz-ros2-control \
         ros-humble-joint-state-publisher \
         ros-humble-joint-state-broadcaster \
         ros-humble-joint-state-publisher-gui \
@@ -80,7 +77,6 @@ RUN apt-get update && \
         ros-humble-ament-cmake-clang-format \
         ros-humble-ament-cmake-clang-tidy \
         ros-humble-pinocchio \
-        ros-humble-hardware-interface-testing \
         ros-humble-ros2-control-test-assets \
         ros-humble-diff-drive-controller \
         python3-requests \
@@ -100,6 +96,24 @@ RUN apt-get update && \
 
 RUN rosdep init 2>/dev/null || true
 
+# ============================================================
+# Franka ROS2 v0.1.0
+# ============================================================
+
+ARG FRANKA_ROS2_VERSION=v0.1.0
+
+RUN mkdir -p /opt/franka_ros2/src && \
+    git clone --branch ${FRANKA_ROS2_VERSION} --depth 1 \
+        https://github.com/frankarobotics/franka_ros2.git \
+        /opt/franka_ros2/src/franka_ros2
+
+RUN source /opt/ros/humble/setup.bash && \
+    rosdep update && \
+    rosdep install \
+        --from-paths /opt/franka_ros2/src \
+        --ignore-src \
+        --rosdistro humble \
+        -r -y
 # ============================================================
 # Additional graphical / MuJoCo dependencies
 # ============================================================
