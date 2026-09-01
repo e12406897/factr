@@ -13,6 +13,14 @@
 
     "remoteUser": "asl_team",
 
+    // Without this, Dev Containers replaces the image's ENTRYPOINT/CMD with its own
+    // keep-alive wrapper (visible as PID 1) so the container survives even if CMD would
+    // otherwise exit immediately without a TTY — but that silently skips our custom
+    // entrypoint.sh (root-only USB latency_timer setup) entirely. Disabling it makes
+    // Dev Containers respect the Dockerfile's own ENTRYPOINT/CMD; see Dockerfile's CMD
+    // (sleep infinity) for how the container now stays alive on its own instead.
+    "overrideCommand": false,
+
     "workspaceFolder": "/factr",
 
     "workspaceMount": "source=${localWorkspaceFolder},target=/factr,type=bind",

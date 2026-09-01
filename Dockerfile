@@ -208,4 +208,7 @@ COPY .devcontainer/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/bin/bash"]
+# Keeps the container running indefinitely on its own (devcontainer.json now sets
+# "overrideCommand": false, so Dev Containers no longer supplies its own keep-alive
+# wrapper for us). VS Code's terminals still attach separately via `docker exec`.
+CMD ["sleep", "infinity"]
