@@ -32,6 +32,16 @@ class Args:
     # See FrankaRos2Follower's docstring: unverified for real hardware, adjust if a
     # per-joint contact test shows force-feedback pushes the wrong way.
     torque_sign: float = 1.0
+    enable_gripper: bool = True
+    # franka_gripper_node's control_msgs/action/GripperCommand action name.
+    gripper_action_name: str = "/gripper_action"
+    # Must match your leader config's gripper_teleop.actuation_range.
+    gripper_actuation_range: float = 0.8
+    # Franka Hand max opening width, meters. Assumes linear 0=closed mapping — verify.
+    gripper_width_max: float = 0.08
+    gripper_max_effort: float = 20.0
+    gripper_goal_position_threshold: float = 0.005
+    gripper_goal_refresh_period_sec: float = 0.1
 
 
 def main(args: Args) -> None:
@@ -44,10 +54,18 @@ def main(args: Args) -> None:
 
     follower_main(
         zmq_addresses=zmq_addresses,
+        name=args.name,
         node_name=f"factr_franka_ros2_follower_{args.name}",
         trajectory_topic=args.trajectory_topic,
         robot_state_topic=args.robot_state_topic,
         torque_sign=args.torque_sign,
+        enable_gripper=args.enable_gripper,
+        gripper_action_name=args.gripper_action_name,
+        gripper_actuation_range=args.gripper_actuation_range,
+        gripper_width_max=args.gripper_width_max,
+        gripper_max_effort=args.gripper_max_effort,
+        gripper_goal_position_threshold=args.gripper_goal_position_threshold,
+        gripper_goal_refresh_period_sec=args.gripper_goal_refresh_period_sec,
     )
 
 
