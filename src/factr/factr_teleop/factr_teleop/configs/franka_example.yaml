@@ -1,4 +1,4 @@
-name: sim # options: sim/left/right (decides the zmq addresses used for follower/leader communication)
+name: left # options: sim/left/right (decides the zmq addresses used for follower/leader communication)
 
 dynamixel:
   # USB port names given by the command: ls /dev/serial/by-id/
@@ -27,9 +27,9 @@ arm_teleop:
   arm_joint_limits_safety_margin: 0.1
   initialization:
     # The expected leader arm joint position before launching the script
-    calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0]
+    calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.77316529]
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
-    initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0]
+    initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.77316529]
   
 gripper_teleop:
   # The maximum range (in rad) of the leader gripper trigger
@@ -38,12 +38,12 @@ gripper_teleop:
 controller:
   frequency: 500
   torque_feedback:
-    enable: True
+    enable: False
     gain: [0.5, 0.25, 0.1, 0.25, 0.1, 0.1, 0.1]
     damping: 0
     motor_scalar: [87, 87, 87, 87, 12, 12, 12] 
   gravity_comp:
-    enable: True
+    enable: False
     gain: 0.3
   null_space_regulation:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
@@ -61,6 +61,6 @@ controller:
     kd: 0.04315069084
 
   gripper_feedback:
-    enable: True
+    enable: False
     gain: 4
     ema_beta: 0.95

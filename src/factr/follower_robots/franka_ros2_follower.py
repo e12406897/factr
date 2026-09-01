@@ -70,7 +70,9 @@ class FrankaRos2Follower(Node):
             sec=int(trajectory_point_duration_sec),
             nanosec=int((trajectory_point_duration_sec % 1.0) * 1e9),
         )
-        self._trajectory_pub = self.create_publisher(JointTrajectory, trajectory_topic, 10)
+        self._trajectory_pub = self.create_publisher(
+            JointTrajectory, trajectory_topic, 10
+        )
         self._state_sub = self.create_subscription(
             FrankaRobotState, robot_state_topic, self._on_robot_state, 10
         )
@@ -93,13 +95,30 @@ class FrankaRos2Follower(Node):
         tau_ext = self._torque_sign * np.array(
             msg.tau_ext_hat_filtered[: self._num_arm_joints], dtype=np.float64
         )
+        self.ee_pos = msg.o_t_ee[-4:-1]
         self._state_pub.send_message(q)
         self._torque_pub.send_message(tau_ext)
         self._raw_torque_pub.send_message(tau_ext)
 
+    def out_of_bounds(self):
+        # check x_direction
+        if self.ee_pos[0] > 0.3 or self.ee_pos[0] < -0.3:
+            return True
+        # check y_direction
+        elif self.ee_pos[1] > 0.4 or self.ee_pos[1] < -0.65:
+            return True
+        # check z_direction
+        elif self.ee_pos[2] > 0.3 or self.ee_pos[1] < -0.6:
+            return True
+        # within bounds
+        else:
+            return False
+
     def _forward_command(self) -> None:
         arm_cmd = self._cmd_sub.message
         if arm_cmd is None:
+            return
+        if self.out_of_bounds():
             return
         msg = JointTrajectory()
         msg.joint_names = self.JOINT_NAMES
@@ -110,9 +129,15 @@ class FrankaRos2Follower(Node):
         self._trajectory_pub.publish(msg)
 
 
-def main(zmq_addresses: Dict[str, str], node_name: str = "factr_franka_ros2_follower", **kwargs) -> None:
+def main(
+    zmq_addresses: Dict[str, str],
+    node_name: str = "factr_franka_ros2_follower",
+    **kwargs,
+) -> None:
     rclpy.init()
-    follower = FrankaRos2Follower(zmq_addresses=zmq_addresses, node_name=node_name, **kwargs)
+    follower = FrankaRos2Follower(
+        zmq_addresses=zmq_addresses, node_name=node_name, **kwargs
+    )
     try:
         rclpy.spin(follower)
     except KeyboardInterrupt:
