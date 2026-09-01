@@ -36,7 +36,9 @@
     "source=/home/asl_team/catkin_ws/devel/lib/libfranka_hw.so,target=/usr/local/lib/libfranka_hw.so,type=bind",
     "source=/home/asl_team/catkin_ws/devel/lib/libfranka_control_services.so,target=/usr/local/lib/libfranka_control_services.so,type=bind",
     "source=/home/asl_team/libfranka/build,target=/home/asl_team/libfranka/build,type=bind",
-    "source=/home/asl_team/libfranka/include,target=/home/asl_team/libfranka/include,type=bind"
+    "source=/home/asl_team/libfranka/include,target=/home/asl_team/libfranka/include,type=bind",
+    "source=/lib/x86_64-linux-gnu/libPocoNet.so.62,target=/lib/x86_64-linux-gnu/libPocoNet.so.62,type=bind",
+    "source=/lib/x86_64-linux-gnu/libPocoFoundation.so.62,target=/lib/x86_64-linux-gnu/libPocoFoundation.so.62,type=bind"
     ],
 
     "containerEnv": {
