@@ -151,6 +151,7 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip && \
 ARG USERNAME=asl_team
 ARG USER_UID=1000
 ARG USER_GID=1000
+ENV USERNAME=${USERNAME}
 
 RUN groupadd \
         --gid ${USER_GID} \
@@ -161,6 +162,15 @@ RUN groupadd \
         --create-home \
         --shell /bin/bash \
         ${USERNAME}
+
+# ============================================================
+# gosu: lets the entrypoint do root-only setup (USB latency timer)
+# then cleanly drop privileges to ${USERNAME} for the actual session.
+# ============================================================
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/*
 
 # ============================================================
 # User shell configuration
@@ -184,6 +194,18 @@ WORKDIR /factr
 # Make sure the development user owns its home directory
 RUN chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
 
-USER ${USERNAME}
+# ============================================================
+# Entrypoint
+#
+# Stays root at container start (no final USER switch here) so the
+# entrypoint can do root-only setup (USB latency timer) before dropping
+# privileges to ${USERNAME} via gosu for the actual session. VS Code's
+# own terminals/tasks still attach as devcontainer.json's `remoteUser`,
+# independent of this.
+# ============================================================
 
+COPY .devcontainer/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/bin/bash"]
