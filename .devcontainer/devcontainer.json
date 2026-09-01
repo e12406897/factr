@@ -38,7 +38,7 @@
     "source=/home/asl_team/libfranka/build/libfranka.so.0.10,target=/usr/local/lib/libfranka.so.0.10,type=bind"
     ],
 
-    "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && vcs import src < src/franka_ros2/dependency.repos --recursive --skip-existing && rosdep update && rosdep install --from-paths src --ignore-src -r -y && colcon build --symlink-install --packages-select libfranka --cmake-args -DBUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'",
+    "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && FRANKA_ROS2_VERSION=v0.1.0 && [ -d src/franka_ros2 ] || git clone --branch $FRANKA_ROS2_VERSION --depth 1 https://github.com/frankarobotics/franka_ros2.git src/franka_ros2 && vcs import src < src/franka_ros2/dependency.repos --recursive --skip-existing && rm -rf src/libfranka && rosdep update && rosdep install --from-paths src --ignore-src -r -y --skip-keys libfranka && colcon build --symlink-install --packages-skip libfranka --cmake-args -DCMAKE_BUILD_TYPE=Release'",
     "postStartCommand": "bash -lc 'fuser -k 16098/tcp 16099/tcp 16087/tcp 2>/dev/null || true'",
 
     "customizations": {

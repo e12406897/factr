@@ -97,24 +97,6 @@ RUN apt-get update && \
 RUN rosdep init 2>/dev/null || true
 
 # ============================================================
-# Franka ROS2 v0.1.0
-# ============================================================
-
-ARG FRANKA_ROS2_VERSION=v0.1.0
-
-RUN mkdir -p /opt/franka_ros2/src && \
-    git clone --branch ${FRANKA_ROS2_VERSION} --depth 1 \
-        https://github.com/frankarobotics/franka_ros2.git \
-        /opt/franka_ros2/src/franka_ros2
-
-RUN source /opt/ros/humble/setup.bash && \
-    rosdep update && \
-    rosdep install \
-        --from-paths /opt/franka_ros2/src \
-        --ignore-src \
-        --rosdistro humble \
-        -r -y
-# ============================================================
 # Additional graphical / MuJoCo dependencies
 # ============================================================
 
