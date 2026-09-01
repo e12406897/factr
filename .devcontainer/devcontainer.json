@@ -33,7 +33,9 @@
     "mounts": [
     "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
     "source=/dev/serial/by-id,target=/dev/serial/by-id,type=bind",
-    "source=/home/asl_team/catkin_ws/devel/lib/libfranka_hw.so,target=/usr/local/lib/libfranka_hw.so,type=bind"
+    "source=/home/asl_team/catkin_ws/devel/lib/libfranka_hw.so,target=/usr/local/lib/libfranka_hw.so,type=bind",
+    "source=/home/asl_team/catkin_ws/devel/lib/libfranka_control_services.so,target=/usr/local/lib/libfranka_control_services.so,type=bind",
+    "source=/home/asl_team/libfranka/build/libfranka.so.0.10,target=/usr/local/lib/libfranka.so.0.10,type=bind"
     ],
 
     "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && vcs import src < src/franka_ros2/dependency.repos --recursive --skip-existing && rosdep update && rosdep install --from-paths src --ignore-src -r -y && colcon build --symlink-install --packages-select libfranka --cmake-args -DBUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'",
