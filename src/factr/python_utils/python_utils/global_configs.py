@@ -17,22 +17,32 @@
 # ---------------------------------------------------------------------------
 
 sim_desktop_ip_address = "172.16.0.9"
+# Actual network IPs of the Franka control units. No longer used directly below: the
+# original architecture assumed an external libfranka/ZMQ driver running ON these robot
+# control units, but that driver is not part of this repo. `franka_ros2_follower.py`
+# fills that role instead, running in the same devcontainer as the leader (localhost),
+# not on the robot's own control unit — so the ZMQ addresses below bind/connect via
+# `franka_bridge_loopback_ip` instead of these.
 franka_left_ip_address = "172.16.0.1"
 franka_right_ip_address = "172.16.0.3"
 franka_sim_ip_address = "127.0.0.1"
+# Leader and franka_ros2_follower.py both run inside the same devcontainer.
+franka_bridge_loopback_ip = "127.0.0.1"
 
 
 franka_right_real_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_right_ip_address}:3099",
-    "joint_torque_sub": f"tcp://{franka_right_ip_address}:3087",
-    "joint_pos_cmd_pub": f"tcp://{sim_desktop_ip_address}:2098",
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:3099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
 
 }
 
 franka_left_real_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_left_ip_address}:5099",
-    "joint_torque_sub": f"tcp://{franka_left_ip_address}:5087",
-    "joint_pos_cmd_pub": f"tcp://{sim_desktop_ip_address}:4098",
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:5099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
 
 }
 
