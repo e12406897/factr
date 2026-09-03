@@ -135,14 +135,24 @@ class FACTRTeleop(Node, ABC):
         self.enable_gravity_comp = self.config["controller"]["gravity_comp"]["enable"]
         self.gravity_comp_modifier = self.config["controller"]["gravity_comp"]["gain"]
         self.tau_g = np.zeros(self.num_arm_joints)
-        # friction comp
-        self.stiction_comp_enable_speed = self.config["controller"][
+        # friction comp: Coulomb (constant, direction-dependent) + viscous
+        # (velocity-proportional), per joint.
+        self.coulomb_friction_gain = np.array(
+            self.config["controller"]["static_friction_comp"]["coulomb_gain"],
+            dtype=float,
+        )
+        self.viscous_friction_gain = np.array(
+            self.config["controller"]["static_friction_comp"]["viscous_gain"],
+            dtype=float,
+        )
+        self.friction_velocity_deadband = self.config["controller"][
             "static_friction_comp"
-        ]["enable_speed"]
-        self.stiction_comp_gain = self.config["controller"]["static_friction_comp"][
-            "gain"
-        ]
-        self.stiction_dither_flag = np.ones((self.num_arm_joints), dtype=bool)
+        ]["velocity_deadband"]
+        assert (
+            self.num_arm_joints
+            == len(self.coulomb_friction_gain)
+            == len(self.viscous_friction_gain)
+        ), "coulomb_gain and viscous_gain must each have num_arm_joints entries"
         # joint limit barrier:
         self.joint_limit_kp = self.config["controller"]["joint_limit_barrier"]["kp"]
         self.joint_limit_kd = self.config["controller"]["joint_limit_barrier"]["kd"]
@@ -488,21 +498,23 @@ class FACTRTeleop(Node, ABC):
 
     def friction_compensation(self, arm_joint_vel):
         """
-        Compute joint torques to compensate for static friction during teleoperation.
+        Compute joint torques to compensate for Coulomb (constant, direction-dependent)
+        and viscous (velocity-proportional) friction:
 
-        This method implements static friction compensation as described in Equation 7,
-        Section IX.A of the paper. It omits kinetic friction compensation, which was 
-        necessary in earlier hardware versions to achieve smooth teleoperation, but has 
-        since become unnecessary due to hardware improvements, such as weight reduction. 
+            tau_friction = coulomb_gain * tanh(vel / velocity_deadband) + viscous_gain * vel
+
+        tanh(vel / velocity_deadband) is a smooth stand-in for sign(vel): using a hard
+        sign() would make the Coulomb term flip abruptly between +coulomb_gain and
+        -coulomb_gain on any velocity sensor noise around v=0, causing chatter/buzzing
+        at rest. `velocity_deadband` (rad/s) sets how quickly the transition through
+        zero happens — smaller values approximate a hard sign() more closely (less
+        smoothing, more prone to chatter), larger values smooth the transition over a
+        wider velocity range (less chatter, but also less Coulomb compensation at very
+        low but nonzero speeds).
         """
-        tau_ss = np.zeros(self.num_arm_joints)
-        for i in range(self.num_arm_joints):
-            if abs(arm_joint_vel[i]) < self.stiction_comp_enable_speed:
-                if self.stiction_dither_flag[i]:
-                    tau_ss[i] += self.stiction_comp_gain * abs(self.tau_g[i])
-                else:
-                    tau_ss[i] -= self.stiction_comp_gain * abs(self.tau_g[i])
-                self.stiction_dither_flag[i] = ~self.stiction_dither_flag[i]
+        tau_ss = self.coulomb_friction_gain * np.tanh(
+            arm_joint_vel / self.friction_velocity_deadband
+        ) + self.viscous_friction_gain * arm_joint_vel
         return tau_ss
 
     def null_space_regulation(self, arm_joint_pos, arm_joint_vel):

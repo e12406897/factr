@@ -50,8 +50,13 @@ controller:
     kp: 0.1
     kd: 0.01
   static_friction_comp:
-    enable_speed: 0.9
-    gain: 0.6
+    # Coulomb (constant, direction-dependent) friction compensation gain, Nm, per joint.
+    coulomb_gain: [0, 0, 0, 0, 0, 0, 0]
+    # Viscous (velocity-proportional) friction compensation gain, Nm*s/rad, per joint.
+    viscous_gain: [0, 0, 0, 0, 0, 0, 0]
+    # rad/s. Smooths the Coulomb term's transition through zero velocity (avoids
+    # chatter from a hard sign()); does not affect viscous_gain.
+    velocity_deadband: 0.05
   joint_limit_barrier:
     kp: 1.03561658022
     kd: 0.04315069084

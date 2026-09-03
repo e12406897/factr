@@ -116,7 +116,12 @@ class FrankaRos2Follower(Node):
             self._gripper_max_effort = gripper_max_effort
             self._gripper_goal_position_threshold = gripper_goal_position_threshold
             self._gripper_last_goal_width: Optional[float] = None
-            self._gripper_target_width = 0.0
+            # gripper_state == 0 means CLOSED (width == 0, fingers touching), so
+            # defaulting the target to 0 would command the gripper closed as soon as
+            # this node starts — before the leader has sent anything, and before it's
+            # matched to the leader's actual (open) trigger position. Default to fully
+            # open instead, matching MujocoFrankaFollower's initial_gripper_cmd fix.
+            self._gripper_target_width = gripper_width_max
 
             self._gripper_client = ActionClient(self, GripperCommand, gripper_action_name)
             self._gripper_cmd_sub = self.create_subscription(
@@ -190,7 +195,12 @@ class FrankaRos2Follower(Node):
         ):
             return
         if not self._gripper_client.wait_for_server(timeout_sec=0.0):
+            self.get_logger().warn(
+                "Gripper action server not available yet, skipping goal "
+                f"(target width={target:.4f})"
+            )
             return
+        self.get_logger().info(f"Sending gripper goal: width={target:.4f}")
         goal = GripperCommand.Goal()
         goal.command.position = target
         goal.command.max_effort = self._gripper_max_effort
