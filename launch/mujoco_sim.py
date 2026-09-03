@@ -5,12 +5,16 @@ from typing import Optional, Tuple
 
 import tyro
 
-# Add parent directory to path so we can import src module
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "python_utils"))
+# Case-safe path setup: import as lowercase "follower_robots"/"python_utils", matching
+# the actual on-disk directory names ("src/factr/..."). The previous "FACTR.*"-prefixed
+# style relied on Windows' case-insensitive filesystem and fails on Linux with
+# ModuleNotFoundError (confirmed: see launch/franka_ros2_follower.py for the same fix).
+_SRC_FACTR = Path(__file__).parent.parent / "src" / "factr"
+sys.path.insert(0, str(_SRC_FACTR))
+sys.path.insert(0, str(_SRC_FACTR / "python_utils"))
 from python_utils.global_configs import franka_sim_zmq_addresses
 
-from FACTR.follower_robots.sim_franka_follower import MujocoFrankaFollower
+from follower_robots.sim_franka_follower import MujocoFrankaFollower
 
 MENAGERIE_ROOT: Path = Path(__file__).parent.parent / "src" / "mujoco_menagerie"
 xml = MENAGERIE_ROOT / "franka_fr3" / "fr3.xml"

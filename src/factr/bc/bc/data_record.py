@@ -24,7 +24,7 @@ import pickle
 from pathlib import Path
 from termcolor import colored
 
-from FACTR.bc.bc import utils
+from bc import utils
 from sensor_msgs.msg import JointState, Image
 from python_utils.utils import get_workspace_root
 
