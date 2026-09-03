@@ -544,7 +544,7 @@ class FACTRTeleop(Node, ABC):
 
         This method implements Equation 1 in Section III.A of the paper.
         """
-        
+        external_torque = external_torque*(1-1/np.cosh(external_torque))
         tau_ff = (
             -1.0
             * self.torque_feedback_gain
