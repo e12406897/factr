@@ -162,6 +162,11 @@ RUN groupadd \
         --shell /bin/bash \
         ${USERNAME}
 
+# /dev/ttyUSB* (the Dynamixel leader arm's USB-serial adapters) are owned by
+# root:dialout with group read/write — without this, opening the port fails with
+# "Permission denied" regardless of the latency_timer/entrypoint setup.
+RUN usermod -aG dialout ${USERNAME}
+
 # ============================================================
 # gosu: lets the entrypoint do root-only setup (USB latency timer)
 # then cleanly drop privileges to ${USERNAME} for the actual session.
