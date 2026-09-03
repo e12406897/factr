@@ -75,7 +75,7 @@ class FrankaRos2Follower(Node):
         robot_state_topic: str = "/franka_robot_state_broadcaster/robot_state",
         node_name: str = "factr_franka_ros2_follower",
         command_period_sec: float = 0.002,
-        trajectory_point_duration_sec: float = 0.01,
+        trajectory_point_duration_sec: float = 0.1,
         torque_sign: float = 1.0,
         enable_gripper: bool = True,
         gripper_action_name: str = "/gripper_action",
@@ -150,13 +150,13 @@ class FrankaRos2Follower(Node):
 
     def out_of_bounds(self) -> bool:
         # check x_direction
-        if self.ee_pos[0] > 0.3 or self.ee_pos[0] < -0.3:
+        if self.ee_pos[0] > 0.65 or self.ee_pos[0] < 0.4:
             return True
         # check y_direction
-        elif self.ee_pos[1] > 0.4 or self.ee_pos[1] < -0.65:
+        elif self.ee_pos[1] > 0.3 or self.ee_pos[1] < -0.3:
             return True
         # check z_direction
-        elif self.ee_pos[2] > 0.3 or self.ee_pos[1] < -0.6:
+        elif self.ee_pos[2] > 0.6 or self.ee_pos[2] < 0.3:
             return True
         # within bounds
         else:

@@ -25,11 +25,18 @@ arm_teleop:
   arm_joint_limits_max: [2.8973, 1.7628, 2.8973, -0.8698, 2.8973, 3.7525, 2.8973]
   arm_joint_limits_min: [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
   arm_joint_limits_safety_margin: 0.1
+  # Fixed, additive per-joint correction (radians), applied after calibration offset and
+  # sign. Only for a CONSTANT, pose-independent mechanical mismatch that the pi/2-quantized
+  # calibration offset search structurally cannot resolve (e.g. joint 7 mounted pi/4 off
+  # from the follower's convention). Leave at 0 unless you've empirically confirmed a
+  # constant bias — sign depends on whether the leader reads too high or too low; verify
+  # with the same per-joint contact/motion test used for joint_signs, not by guessing.
+  joint_bias_correction: [0, 0, 0, 0, 0, 0, 0]
   initialization:
     # The expected leader arm joint position before launching the script
-    calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.77316529]
+    calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.785]
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
-    initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.77316529]
+    initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.785]
   
 gripper_teleop:
   # The maximum range (in rad) of the leader gripper trigger

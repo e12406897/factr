@@ -86,6 +86,19 @@ class FACTRTeleop(Node, ABC):
 
         # leader arm parameters
         self.num_arm_joints = self.config["arm_teleop"]["num_arm_joints"]
+        # Fixed, additive per-joint correction (radians) applied after offset/sign, for
+        # constant mechanical mismatches between the leader's own assembly and the
+        # follower's joint convention that the pi/2-quantized calibration offset search
+        # can't resolve (e.g. a true pi/4 mounting offset). Zero by default; only set
+        # entries where you've empirically confirmed a constant, pose-independent bias.
+        self.joint_bias_correction = np.array(
+            self.config["arm_teleop"].get(
+                "joint_bias_correction", [0.0] * self.num_arm_joints
+            ),
+            dtype=float,
+        )
+        assert self.num_arm_joints == len(self.joint_bias_correction), \
+            "joint_bias_correction must have num_arm_joints entries"
         self.safety_margin = self.config["arm_teleop"]["arm_joint_limits_safety_margin"]
         self.arm_joint_limits_max = (
             np.array(self.config["arm_teleop"]["arm_joint_limits_max"])
@@ -362,7 +375,7 @@ class FACTRTeleop(Node, ABC):
         joint_pos_arm = (
             joint_pos[0 : self.num_arm_joints]
             - self.joint_offsets[0 : self.num_arm_joints]
-        ) * self.joint_signs[0 : self.num_arm_joints]
+        ) * self.joint_signs[0 : self.num_arm_joints] + self.joint_bias_correction
         self.gripper_pos = (joint_pos[-1] - self.joint_offsets[-1]) * self.joint_signs[
             -1
         ]
