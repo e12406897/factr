@@ -25,6 +25,12 @@ fi
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y --skip-keys libfranka
 
+# The Dynamixel SDK is a vendored, non-ROS Python package (no package.xml, so rosdep/
+# colcon never touch it) and must be pip-installed in editable mode separately. Lives
+# under src/factr/... (bind-mounted at runtime), so — like the franka_ros2 clone above —
+# this can only happen here, not in the Dockerfile.
+python3 -m pip install --no-cache-dir -e src/factr/factr_teleop/factr_teleop/dynamixel/python
+
 colcon build --symlink-install \
     --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     -DCMAKE_CXX_FLAGS=-I/home/asl_team/libfranka/include

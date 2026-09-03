@@ -76,7 +76,6 @@ RUN apt-get update && \
         ros-humble-moveit-msgs \
         ros-humble-ament-cmake-clang-format \
         ros-humble-ament-cmake-clang-tidy \
-        ros-humble-pinocchio \
         ros-humble-ros2-control-test-assets \
         ros-humble-diff-drive-controller \
         python3-requests \
