@@ -13,6 +13,17 @@ set -e
 
 SESSION="factr"
 
+# One-time, idempotent setup of window-switching shortcuts for a second, plain terminal
+# tab (VS Code's integrated terminal intercepts tmux's Ctrl-b prefix, so switching via
+# tmux keybindings from inside the attached terminal itself doesn't work reliably there —
+# these aliases let you switch by running a short command from a separate tab instead).
+if ! grep -qF "alias sw-hw=" ~/.bashrc 2>/dev/null; then
+    echo "alias sw-hw='tmux select-window -t ${SESSION}:hardware'" >> ~/.bashrc
+fi
+if ! grep -qF "alias sw-br=" ~/.bashrc 2>/dev/null; then
+    echo "alias sw-br='tmux select-window -t ${SESSION}:bridge'" >> ~/.bashrc
+fi
+
 echo "Killing leftover processes from previous runs..."
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 pkill -9 -f "ros2_control_node" 2>/dev/null || true
@@ -49,5 +60,7 @@ tmux new-window -t "$SESSION" -n bridge
 tmux send-keys -t "$SESSION":bridge "bash /factr/launch/start_bridge_sequence.sh" C-m
 
 echo "Attaching to tmux session '$SESSION' (windows: hardware, bridge)."
-echo "Switch windows with Ctrl-b n / Ctrl-b p. Detach with Ctrl-b d."
+echo "Ctrl-b keybindings don't work reliably in VS Code's terminal — instead, open a"
+echo "second, plain terminal tab and run 'sw-hw' / 'sw-br' there to switch what shows"
+echo "here (open a new tab first so the aliases just added to ~/.bashrc are loaded)."
 tmux attach-session -t "$SESSION"

@@ -17,4 +17,4 @@ ros2 topic pub --once /joint_trajectory_controller/joint_trajectory trajectory_m
     "{joint_names: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7], points: [{positions: [0, 0, 0, -1.57, 0, 1.57, 0.785], time_from_start: {sec: 4, nanosec: 0}}]}"
 
 echo "[3/3] Starting franka_ros2_follower.py bridge..."
-python launch/franka_ros2_follower.py --name left
+python3 launch/franka_ros2_follower.py --name left
