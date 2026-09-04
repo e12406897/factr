@@ -157,6 +157,46 @@ Then launch the teleoperation function with ROS2
 ros2 launch launch/factr_teleop.py
 ```
 
+## Troubleshooting
+Increasing the thresholds with franka_ros2 v0.1.0 is not directly possible. Adjusting the force thresholds is possible by setting it directly in the robot.cpp file:
+Then launch the teleoperation function with ROS2
+```bash
+src/franka_ros2/franka_hardware/src/robot.cpp
+```
+
+Then setting it via
+```bash
+Robot::Robot(const std::string& robot_ip, const rclcpp::Logger& logger) {
+  tau_command_.fill(0.);
+  franka::RealtimeConfig rt_config = franka::RealtimeConfig::kEnforce;
+  if (!franka::hasRealtimeKernel()) {
+    rt_config = franka::RealtimeConfig::kIgnore;
+    RCLCPP_WARN(logger, "You are not using a real-time kernel...");
+  }
+  robot_ = std::make_unique<franka::Robot>(robot_ip, rt_config);
+
+  // Added: raise collision/reflex thresholds from libfranka's conservative
+  // defaults, matching our teleop workload (see franka_control_node.yaml).
+  robot_->setCollisionBehavior(
+      {{80, 80, 80, 80, 30, 30, 30}},    // lower_torque_thresholds_acceleration
+      {{80, 80, 80, 80, 30, 30, 30}},    // upper_torque_thresholds_acceleration
+      {{25, 25, 22, 20, 19, 17, 14}},    // lower_torque_thresholds_nominal
+      {{100, 100, 100, 100, 100, 100, 100}}, // upper_torque_thresholds_nominal
+      {{80, 80, 80, 30, 30, 30}},        // lower_force_thresholds_acceleration
+      {{80, 80, 80, 30, 30, 30}},        // upper_force_thresholds_acceleration
+      {{100, 100, 100, 100, 100, 100}},  // lower_force_thresholds_nominal
+      {{100, 100, 100, 100, 100, 100}}); // upper_force_thresholds_nominal
+
+  model_ = std::make_unique<franka::Model>(robot_->loadModel());
+  franka_hardware_model_ = std::make_unique<Model>(model_.get());
+}
+```
+
+To apply this in your currently running container rebuild the package:
+```bash
+colcon build --packages-select franka_hardware
+```
+
 
 ## Citation
 If you find this codebase useful, feel free to cite our work!

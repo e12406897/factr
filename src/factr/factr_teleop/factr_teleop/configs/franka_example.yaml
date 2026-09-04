@@ -31,7 +31,7 @@ arm_teleop:
   # from the follower's convention). Leave at 0 unless you've empirically confirmed a
   # constant bias — sign depends on whether the leader reads too high or too low; verify
   # with the same per-joint contact/motion test used for joint_signs, not by guessing.
-  joint_bias_correction: [0, 0, 0, 0, 0, 0, 0.785]
+  joint_bias_correction: [-0.0277,  0.0527, -0.0093, -0.0999, -0.011,   0.0181, 0.7602]
   initialization:
     # The expected leader arm joint position before launching the script
     calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.0]
@@ -45,13 +45,13 @@ gripper_teleop:
 controller:
   frequency: 500
   torque_feedback:
-    enable: False
+    enable: True
     gain: [0.5, 0.25, 0.1, 0.25, 0.1, 0.1, 0.1]
     damping: 0
     motor_scalar: [87, 87, 87, 87, 12, 12, 12] 
   gravity_comp:
     enable: True
-    gain: 0.2
+    gain: [0.5, 0.18, 0.5, 0.18, 0.5, 0.5, 0.5] 
   null_space_regulation:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
     kp:  0.1

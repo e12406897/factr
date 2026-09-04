@@ -97,8 +97,9 @@ class FACTRTeleop(Node, ABC):
             ),
             dtype=float,
         )
-        assert self.num_arm_joints == len(self.joint_bias_correction), \
-            "joint_bias_correction must have num_arm_joints entries"
+        assert self.num_arm_joints == len(
+            self.joint_bias_correction
+        ), "joint_bias_correction must have num_arm_joints entries"
         self.safety_margin = self.config["arm_teleop"]["arm_joint_limits_safety_margin"]
         self.arm_joint_limits_max = (
             np.array(self.config["arm_teleop"]["arm_joint_limits_max"])
@@ -136,8 +137,12 @@ class FACTRTeleop(Node, ABC):
         self.gravity_comp_modifier = self.config["controller"]["gravity_comp"]["gain"]
         self.tau_g = np.zeros(self.num_arm_joints)
         # friction comp
-        self.stiction_comp_enable_speed = self.config["controller"]["static_friction_comp"]["enable_speed"]
-        self.stiction_comp_gain = self.config["controller"]["static_friction_comp"]["gain"]
+        self.stiction_comp_enable_speed = self.config["controller"][
+            "static_friction_comp"
+        ]["enable_speed"]
+        self.stiction_comp_gain = self.config["controller"]["static_friction_comp"][
+            "gain"
+        ]
         self.stiction_dither_flag = np.ones((self.num_arm_joints), dtype=bool)
         # joint limit barrier:
         self.joint_limit_kp = self.config["controller"]["joint_limit_barrier"]["kp"]
@@ -154,10 +159,12 @@ class FACTRTeleop(Node, ABC):
         self.enable_torque_feedback = self.config["controller"]["torque_feedback"][
             "enable"
         ]
-        self.torque_feedback_gain = np.array(self.config["controller"]["torque_feedback"]["gain"])
-        self.torque_feedback_motor_scalar = np.array(self.config["controller"][
-            "torque_feedback"
-        ]["motor_scalar"])
+        self.torque_feedback_gain = np.array(
+            self.config["controller"]["torque_feedback"]["gain"]
+        )
+        self.torque_feedback_motor_scalar = np.array(
+            self.config["controller"]["torque_feedback"]["motor_scalar"]
+        )
         self.torque_feedback_damping = self.config["controller"]["torque_feedback"][
             "damping"
         ]
@@ -175,7 +182,6 @@ class FACTRTeleop(Node, ABC):
         self._match_start_pos()
         # start the control loop
         self.timer = self.create_timer(self.dt, self.control_loop_callback)
-
 
     def _prepare_dynamixel(self):
         """
@@ -467,19 +473,22 @@ class FACTRTeleop(Node, ABC):
     def gravity_compensation(self, arm_joint_pos, arm_joint_vel):
         """
         Computes joint torque for gravity compensation using inverse dynamics.
-        This method uses the Recursive Newton-Euler Algorithm (RNEA), provided by the 
-        Pinocchio library, to calculate the torques required to counteract gravity 
-        at the current joint states. The result is scaled by a modifier to tune the 
+        This method uses the Recursive Newton-Euler Algorithm (RNEA), provided by the
+        Pinocchio library, to calculate the torques required to counteract gravity
+        at the current joint states. The result is scaled by a modifier to tune the
         compensation strength.
 
-        This implementation corresponds to the gravity compensation strategy 
+        This implementation corresponds to the gravity compensation strategy
         described in Section III.C of the paper.
         """
         self.tau_g = pin.rnea(
-            self.pin_model, self.pin_data, 
-            arm_joint_pos, arm_joint_vel, np.zeros_like(arm_joint_vel)
+            self.pin_model,
+            self.pin_data,
+            arm_joint_pos,
+            arm_joint_vel,
+            np.zeros_like(arm_joint_vel),
         )
-        self.tau_g *= self.gravity_comp_modifier 
+        self.tau_g *= self.gravity_comp_modifier
         return self.tau_g
 
     def friction_compensation(self, arm_joint_vel):
@@ -487,9 +496,9 @@ class FACTRTeleop(Node, ABC):
         Compute joint torques to compensate for static friction during teleoperation.
 
         This method implements static friction compensation as described in Equation 7,
-        Section IX.A of the paper. It omits kinetic friction compensation, which was 
-        necessary in earlier hardware versions to achieve smooth teleoperation, but has 
-        since become unnecessary due to hardware improvements, such as weight reduction. 
+        Section IX.A of the paper. It omits kinetic friction compensation, which was
+        necessary in earlier hardware versions to achieve smooth teleoperation, but has
+        since become unnecessary due to hardware improvements, such as weight reduction.
         """
         tau_ss = np.zeros(self.num_arm_joints)
         for i in range(self.num_arm_joints):
@@ -500,9 +509,8 @@ class FACTRTeleop(Node, ABC):
                     tau_ss[i] -= self.stiction_comp_gain * abs(self.tau_g[i])
                 self.stiction_dither_flag[i] = ~self.stiction_dither_flag[i]
 
-        print(tau_ss)
         return tau_ss
-    
+
         # tau_ss = self.coulomb_friction_gain * np.tanh(
         #     arm_joint_vel / self.friction_velocity_deadband
         # ) + self.viscous_friction_gain * arm_joint_vel
@@ -510,13 +518,13 @@ class FACTRTeleop(Node, ABC):
 
     def null_space_regulation(self, arm_joint_pos, arm_joint_vel):
         """
-        Computes joint torques to perform null-space regulation for redundancy resolution 
+        Computes joint torques to perform null-space regulation for redundancy resolution
         of the leader arm.
 
-        This method enables the specification of a desired null-space joint configuration 
-        via `self.null_space_joint_target`. It implements the control strategy described 
-        in Equation 3 of Section III.B in the paper, projecting a PD control law into 
-        the null space of the task Jacobian to achieve secondary objectives without 
+        This method enables the specification of a desired null-space joint configuration
+        via `self.null_space_joint_target`. It implements the control strategy described
+        in Equation 3 of Section III.B in the paper, projecting a PD control law into
+        the null space of the task Jacobian to achieve secondary objectives without
         affecting the primary task.
         """
         J = pin.computeJointJacobian(
@@ -524,8 +532,10 @@ class FACTRTeleop(Node, ABC):
         )
         J_dagger = np.linalg.pinv(J)
         null_space_projector = np.eye(self.num_arm_joints) - J_dagger @ J
-        q_error = arm_joint_pos - self.null_space_joint_target[0:self.num_arm_joints]
-        tau_n = null_space_projector @ (-self.null_space_kp*q_error-self.null_space_kd*arm_joint_vel)
+        q_error = arm_joint_pos - self.null_space_joint_target[0 : self.num_arm_joints]
+        tau_n = null_space_projector @ (
+            -self.null_space_kp * q_error - self.null_space_kd * arm_joint_vel
+        )
         return tau_n
 
     def torque_feedback(self, external_torque, arm_joint_vel):
@@ -535,7 +545,7 @@ class FACTRTeleop(Node, ABC):
 
         This method implements Equation 1 in Section III.A of the paper.
         """
-        external_torque = external_torque*(1-1/np.cosh(external_torque))
+        external_torque = external_torque * (1 - 1 / np.cosh(external_torque))
         tau_ff = (
             -1.0
             * self.torque_feedback_gain

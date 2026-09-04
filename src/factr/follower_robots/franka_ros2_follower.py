@@ -94,6 +94,7 @@ class FrankaRos2Follower(Node):
         gripper_max_effort: float = 20.0,
         gripper_goal_position_threshold: float = 0.005,
         gripper_goal_refresh_period_sec: float = 0.1,
+        var_scale_factor: float = 1.0
     ):
         super().__init__(node_name)
         self._num_arm_joints = num_arm_joints
@@ -152,6 +153,10 @@ class FrankaRos2Follower(Node):
             f"forwarding to {trajectory_topic} ..."
         )
 
+        #filter cache
+        self.ext_arm_torque_prev = np.zeros(num_arm_joints)
+        self.var_scale_factor = var_scale_factor
+
     def _on_robot_state(self, msg: FrankaRobotState) -> None:
         q = np.array(msg.q[: self._num_arm_joints], dtype=np.float64)
         tau_ext = self._torque_sign * np.array(
@@ -160,29 +165,47 @@ class FrankaRos2Follower(Node):
         self.ee_pos = np.array(msg.o_t_ee[-4:-1], dtype=np.float64)
         self._current_q = q
         self._state_pub.send_message(q)
+        tau_ext = self.filter_tau_ext(tau_ext)
         self._torque_pub.send_message(tau_ext)
         self._raw_torque_pub.send_message(tau_ext)
 
     def out_of_bounds(self) -> bool:
         # check x_direction
-        if self.ee_pos[0] > 0.65 or self.ee_pos[0] < 0.4:
+        if self.ee_pos[0] > 0.65 or self.ee_pos[0] < 0.3:
             return True
         # check y_direction
         elif self.ee_pos[1] > 0.3 or self.ee_pos[1] < -0.3:
             return True
         # check z_direction
-        elif self.ee_pos[2] > 0.6 or self.ee_pos[2] < 0.3:
+        elif self.ee_pos[2] > 0.7 or self.ee_pos[2] < 0.3:
             return True
         # within bounds
         else:
             return False
+
+    def filter_tau_ext(self, tau_ext):
+
+        for i in range(len(tau_ext)):
+            delta = tau_ext[i] - self.ext_arm_torque_prev[i]
+            if abs(tau_ext[i]) - abs(self.ext_arm_torque_prev[i]) > 0:
+
+                scale = np.tanh(self.var_scale_factor * abs(delta)) / (
+                    self.var_scale_factor * abs(delta) + 1e-8
+                )
+                self.ext_arm_torque_prev[i] += delta * scale
+
+            else:
+                self.ext_arm_torque_prev[i] = tau_ext[i]
+
+        return self.ext_arm_torque_prev
+
 
     def _trajectory_point_duration(self, target_q: np.ndarray) -> Duration:
         duration_sec = self._min_trajectory_point_duration_sec
         if self._current_q is not None:
             max_distance = float(np.max(np.abs(target_q - self._current_q)))
             if max_distance > self._joint_distance_threshold:
-                duration_sec *= max_distance / self._joint_distance_threshold
+                duration_sec *= max_distance / 0.01
         return Duration(
             sec=int(duration_sec),
             nanosec=int((duration_sec % 1.0) * 1e9),
