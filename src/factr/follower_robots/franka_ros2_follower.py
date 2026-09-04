@@ -194,12 +194,12 @@ class FrankaRos2Follower(Node):
             < self._gripper_goal_position_threshold
         ):
             return
-        if not self._gripper_client.wait_for_server(timeout_sec=0.0):
-            self.get_logger().warn(
-                "Gripper action server not available yet, skipping goal "
-                f"(target width={target:.4f})"
-            )
-            return
+        # if not self._gripper_client.wait_for_server(timeout_sec=0.0):
+        #     self.get_logger().warn(
+        #         "Gripper action server not available yet, skipping goal "
+        #         f"(target width={target:.4f})"
+        #     )
+        #     return
         self.get_logger().info(f"Sending gripper goal: width={target:.4f}")
         goal = GripperCommand.Goal()
         goal.command.position = target
