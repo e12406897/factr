@@ -101,6 +101,19 @@ Before starting the Dev Container connect the power hub boards with your PC and 
 
 
 Inside the container
+Either start bash script to start all processes with 
+```bash
+bash launch/start_real_robot_teleop.sh
+```
+
+for switching terminal open second terminal and type
+```bash
+sw-hw #for switching to factr:hardware
+sw-br #for switching to factr:bridge
+```
+
+or start with individual commands:
+
 ```bash
 source /opt/ros/humble/setup.bash
 source /factr/install/setup.bash

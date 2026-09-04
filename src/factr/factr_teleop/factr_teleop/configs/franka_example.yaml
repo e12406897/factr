@@ -50,20 +50,15 @@ controller:
     damping: 0
     motor_scalar: [87, 87, 87, 87, 12, 12, 12] 
   gravity_comp:
-    enable: False
-    gain: 0.3
+    enable: True
+    gain: 0.2
   null_space_regulation:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
     kp:  0.1
     kd: 0.01
   static_friction_comp:
-    # Coulomb (constant, direction-dependent) friction compensation gain, Nm, per joint.
-    coulomb_gain: [0, 0.3, 0, 0.3, 0, 0, 0]
-    # Viscous (velocity-proportional) friction compensation gain, Nm*s/rad, per joint.
-    viscous_gain: [0, 0.01, 0, 0.01, 0, 0, 0]
-    # rad/s. Smooths the Coulomb term's transition through zero velocity (avoids
-    # chatter from a hard sign()); does not affect viscous_gain.
-    velocity_deadband: 0.05
+    enable_speed: 0.9
+    gain: 0.1
   joint_limit_barrier:
     kp: 1.03561658022
     kd: 0.04315069084
