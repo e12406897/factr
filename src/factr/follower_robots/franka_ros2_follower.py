@@ -51,6 +51,15 @@ class FrankaRos2Follower(Node):
       (`gripper_actuation_range` -> `gripper_width_max`) assumes a linear mapping with
       0 = closed — verify against your actual leader gripper convention and adjust.
 
+    Trajectory timing: `trajectory_point_duration_sec` is the MINIMUM time given to
+    `joint_trajectory_controller` to reach each new target — used as-is while the
+    target stays within `joint_distance_threshold` (rad, the largest single-joint
+    move) of the last known robot position. Beyond that threshold, the duration is
+    scaled up proportionally to how far the target distance exceeds the threshold,
+    so a sudden large jump (e.g. leader command loss/resync) doesn't get commanded at
+    the same speed as a small tracking correction and trip a Franka velocity/reflex
+    fault.
+
     Prerequisites this class does NOT set up for you:
       - `franka.launch.py` already running against the real robot (hardware active).
       - `joint_trajectory_controller` spawned, e.g.:
@@ -76,6 +85,7 @@ class FrankaRos2Follower(Node):
         node_name: str = "factr_franka_ros2_follower",
         command_period_sec: float = 0.002,
         trajectory_point_duration_sec: float = 0.1,
+        joint_distance_threshold: float = 0.5,
         torque_sign: float = 1.0,
         enable_gripper: bool = True,
         gripper_action_name: str = "/gripper_action",
@@ -90,10 +100,9 @@ class FrankaRos2Follower(Node):
         self._torque_sign = torque_sign
         self.ee_pos = np.zeros(3)
 
-        self._trajectory_point_duration = Duration(
-            sec=int(trajectory_point_duration_sec),
-            nanosec=int((trajectory_point_duration_sec % 1.0) * 1e9),
-        )
+        self._min_trajectory_point_duration_sec = trajectory_point_duration_sec
+        self._joint_distance_threshold = joint_distance_threshold
+        self._current_q: Optional[np.ndarray] = None
         self._trajectory_pub = self.create_publisher(
             JointTrajectory, trajectory_topic, 10
         )
@@ -149,6 +158,7 @@ class FrankaRos2Follower(Node):
             msg.tau_ext_hat_filtered[: self._num_arm_joints], dtype=np.float64
         )
         self.ee_pos = np.array(msg.o_t_ee[-4:-1], dtype=np.float64)
+        self._current_q = q
         self._state_pub.send_message(q)
         self._torque_pub.send_message(tau_ext)
         self._raw_torque_pub.send_message(tau_ext)
@@ -167,17 +177,29 @@ class FrankaRos2Follower(Node):
         else:
             return False
 
+    def _trajectory_point_duration(self, target_q: np.ndarray) -> Duration:
+        duration_sec = self._min_trajectory_point_duration_sec
+        if self._current_q is not None:
+            max_distance = float(np.max(np.abs(target_q - self._current_q)))
+            if max_distance > self._joint_distance_threshold:
+                duration_sec *= max_distance / self._joint_distance_threshold
+        return Duration(
+            sec=int(duration_sec),
+            nanosec=int((duration_sec % 1.0) * 1e9),
+        )
+
     def _forward_command(self) -> None:
         arm_cmd = self._cmd_sub.message
         if arm_cmd is None:
             return
         if self.out_of_bounds():
             return
+        target_q = np.array(arm_cmd[: self._num_arm_joints], dtype=np.float64)
         msg = JointTrajectory()
         msg.joint_names = self.JOINT_NAMES
         point = JointTrajectoryPoint()
-        point.positions = [float(x) for x in arm_cmd[: self._num_arm_joints]]
-        point.time_from_start = self._trajectory_point_duration
+        point.positions = [float(x) for x in target_q]
+        point.time_from_start = self._trajectory_point_duration(target_q)
         msg.points = [point]
         self._trajectory_pub.publish(msg)
 

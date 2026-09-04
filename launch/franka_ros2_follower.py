@@ -29,6 +29,12 @@ class Args:
     # Verify with `ros2 topic list` once the broadcaster is running — this is a best
     # guess, not confirmed.
     robot_state_topic: str = "/franka_robot_state_broadcaster/robot_state"
+    # Minimum time given to reach each new trajectory point, seconds.
+    trajectory_point_duration_sec: float = 0.1
+    # Largest single-joint distance (rad) still commanded at trajectory_point_duration_sec;
+    # beyond this, the duration is scaled up proportionally. See FrankaRos2Follower's
+    # docstring.
+    joint_distance_threshold: float = 0.5
     # See FrankaRos2Follower's docstring: unverified for real hardware, adjust if a
     # per-joint contact test shows force-feedback pushes the wrong way.
     torque_sign: float = 1.0
@@ -58,6 +64,8 @@ def main(args: Args) -> None:
         node_name=f"factr_franka_ros2_follower_{args.name}",
         trajectory_topic=args.trajectory_topic,
         robot_state_topic=args.robot_state_topic,
+        trajectory_point_duration_sec=args.trajectory_point_duration_sec,
+        joint_distance_threshold=args.joint_distance_threshold,
         torque_sign=args.torque_sign,
         enable_gripper=args.enable_gripper,
         gripper_action_name=args.gripper_action_name,
