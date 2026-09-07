@@ -40,9 +40,9 @@ class Args:
     torque_sign: float = 1.0
     enable_gripper: bool = True
     # franka_gripper_node's control_msgs/action/GripperCommand action name.
-    gripper_action_name: str = "/gripper_action"
+    gripper_action_name: str = "/panda_gripper/gripper_action"
     # Must match your leader config's gripper_teleop.actuation_range.
-    gripper_actuation_range: float = 0.8
+    gripper_actuation_range: float = 0.5
     # Franka Hand max opening width, meters. Assumes linear 0=closed mapping — verify.
     gripper_width_max: float = 0.08
     gripper_max_effort: float = 20.0

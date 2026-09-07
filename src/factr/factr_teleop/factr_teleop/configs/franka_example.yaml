@@ -38,10 +38,6 @@ arm_teleop:
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
     initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.785]
   
-gripper_teleop:
-  # The maximum range (in rad) of the leader gripper trigger
-  actuation_range: 1
-
 controller:
   frequency: 500
   torque_feedback:
@@ -71,3 +67,7 @@ controller:
     enable: False
     gain: 4
     ema_beta: 0.95
+
+gripper_teleop:
+  # The maximum range (in rad) of the leader gripper trigger
+  actuation_range: 0.5
