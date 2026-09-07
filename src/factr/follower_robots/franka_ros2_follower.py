@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import rclpy
 from builtin_interfaces.msg import Duration
-from control_msgs.action import GripperCommand
+from franka_msgs.action import Grasp, Move
 from franka_msgs.msg import FrankaRobotState
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from rclpy.action import ActionClient
@@ -41,23 +41,27 @@ class FrankaRos2Follower(Node):
 
     Gripper (ROS, not ZMQ — matches FACTRTeleopFrankaZMQ.set_up_communication()):
       - subscribes to `/factr_teleop/{name}/cmd_gripper_pos`: leader gripper position
-      - publishes  on `/gripper/{name}/obs_gripper_torque`:  gripper force feedback
-      Uses `franka_gripper_node`'s `control_msgs/action/GripperCommand` action server.
-      Actions are goal/result oriented, not built for per-tick streaming (unlike the
-      arm's trajectory topic), and continuous position tracking doesn't work well here
-      anyway since `franka::Gripper::move()`/`grasp()` are slow, blocking, non-preemptible
-      calls. So the leader gripper signal is treated as a binary switch instead of a
-      continuous position: below half of `gripper_actuation_range` -> CLOSED (width 0,
-      grasped with `gripper_max_effort`, i.e. `franka::Gripper::grasp()`); at or above
-      half -> OPEN (`gripper_width_max`, via `franka::Gripper::move()`). A new goal is
-      only sent when the target state actually changes (see
-      `gripper_goal_position_threshold`), not on every tick.
+      Uses `franka_gripper_node`'s native `franka_msgs/action/Grasp` and
+      `franka_msgs/action/Move` action servers directly (not the `control_msgs/GripperCommand`
+      wrapper -- that wrapper always calls `franka::Gripper::grasp()` with a tight default
+      epsilon tolerance (`default_grasp_epsilon`, ~5mm) around the *commanded* width; for an
+      object whose actual width isn't known in advance, the resulting width almost always
+      falls outside that tolerance, libfranka reports the grasp as failed, and the gripper
+      does not keep applying holding force. Calling `Grasp` directly lets us pass a wide
+      `epsilon` (`gripper_grasp_epsilon`, defaults to `gripper_width_max` -- i.e. accept any
+      resulting width as a successful grasp) so force is held regardless of object size.
 
-      Note: `franka_gripper_node`'s action server computes the actual jaw width as
-      `2 * command.position` (i.e. `command.position` is a per-finger half-width, not
-      the full opening) -- see `onExecuteGripperCommand()` in `gripper_action_server.cpp`.
-      We halve our target width before sending so the server's doubling recovers the
-      width we mean.
+      Actions are goal/result oriented, not built for per-tick streaming (unlike the arm's
+      trajectory topic), and continuous position tracking doesn't work well here anyway
+      since `move()`/`grasp()` are slow, blocking, non-preemptible calls -- a second command
+      while one is still executing throws and can release an already-applied grasp force
+      (see `_gripper_goal_in_flight`). So the leader gripper signal is treated as a binary
+      switch instead of a continuous position, with hysteresis around the midpoint of
+      `gripper_actuation_range` (open above 60%, closed below 40%) to avoid chattering: below
+      -> CLOSED (`Grasp`, width 0, force `gripper_max_effort`, speed `gripper_speed`, wide
+      epsilon); above -> OPEN (`Move`, width `gripper_width_max`, speed `gripper_speed`). A
+      new goal is only sent when the target state actually changes (see
+      `gripper_goal_position_threshold`), not on every tick.
 
     Trajectory timing: `trajectory_point_duration_sec` is the MINIMUM time given to
     `joint_trajectory_controller` to reach each new target — used as-is while the
@@ -98,11 +102,17 @@ class FrankaRos2Follower(Node):
         enable_gripper: bool = True,
         #define config file which is used bei factr teleoperation to get the same actuation range for the gripper
         config_file = 'franka_example.yaml',
-        gripper_action_name: str = "/panda_gripper/gripper_action",
+        gripper_move_action_name: str = "/panda_gripper/move",
+        gripper_grasp_action_name: str = "/panda_gripper/grasp",
         gripper_width_max: float = 0.075,
-        # Only used while CLOSING (franka::Gripper::grasp()) -- move()/opening ignores it.
         # Franka Hand's max grasping force is ~70N; default to that for a firm "max force" grip.
         gripper_max_effort: float = 70.0,
+        gripper_speed: float = 0.1,
+        # How much the actual grasped width may deviate from the commanded width (0) and
+        # still count as a successful grasp. None -> gripper_width_max, i.e. accept any
+        # resulting width (we don't know the object size in advance) so libfranka always
+        # keeps applying the holding force. See class docstring.
+        gripper_grasp_epsilon: Optional[float] = None,
         gripper_goal_position_threshold: float = 0.01,
         gripper_goal_refresh_period_sec: float = 0.1,
         var_scale_factor: float = 1.0
@@ -141,6 +151,10 @@ class FrankaRos2Follower(Node):
             self._gripper_actuation_range = config["gripper_teleop"]["actuation_range"]
             self._gripper_width_max = gripper_width_max
             self._gripper_max_effort = gripper_max_effort
+            self._gripper_speed = gripper_speed
+            self._gripper_grasp_epsilon = (
+                gripper_grasp_epsilon if gripper_grasp_epsilon is not None else gripper_width_max
+            )
             self._gripper_goal_position_threshold = gripper_goal_position_threshold
             self._gripper_last_goal_width: Optional[float] = None
             self._gripper_is_closed = False
@@ -156,15 +170,13 @@ class FrankaRos2Follower(Node):
             # open instead, matching MujocoFrankaFollower's initial_gripper_cmd fix.
             self._gripper_target_width = gripper_width_max
 
-            self._gripper_client = ActionClient(self, GripperCommand, gripper_action_name)
+            self._gripper_move_client = ActionClient(self, Move, gripper_move_action_name)
+            self._gripper_grasp_client = ActionClient(self, Grasp, gripper_grasp_action_name)
             self._gripper_cmd_sub = self.create_subscription(
                 JointState,
                 f"/factr_teleop/{name}/cmd_gripper_pos",
                 self._on_gripper_cmd,
                 10,
-            )
-            self._gripper_torque_pub = self.create_publisher(
-                JointState, f"/gripper/{name}/obs_gripper_torque", 10
             )
             self._gripper_goal_timer = self.create_timer(
                 gripper_goal_refresh_period_sec, self._maybe_send_gripper_goal
@@ -273,25 +285,26 @@ class FrankaRos2Follower(Node):
             < self._gripper_goal_position_threshold
         ):
             return
-        # if not self._gripper_client.wait_for_server(timeout_sec=0.0):
-        #     self.get_logger().warn(
-        #         "Gripper action server not available yet, skipping goal "
-        #         f"(target width={target:.4f})"
-        #     )
-        #     return
-        self.get_logger().info(f"Sending gripper goal: width={target:.4f}")
-        goal = GripperCommand.Goal()
-        # franka_gripper_node's action server computes the actual jaw width as
-        # `2 * command.position` (i.e. command.position is a per-finger half-width, not
-        # the full opening) -- see onExecuteGripperCommand() in gripper_action_server.cpp.
-        # Halve our target width here so the server's doubling recovers the width we mean.
-        goal.command.position = target / 2.0
-        goal.command.max_effort = self._gripper_max_effort
         self._gripper_last_goal_width = target
         self._gripper_goal_in_flight = True
-        send_future = self._gripper_client.send_goal_async(
-            goal, feedback_callback=self._on_gripper_feedback
-        )
+        if self._gripper_is_closed:
+            self.get_logger().info(
+                f"Sending gripper grasp: force={self._gripper_max_effort:.1f}N, "
+                f"epsilon={self._gripper_grasp_epsilon:.4f}"
+            )
+            goal = Grasp.Goal()
+            goal.width = 0.0
+            goal.speed = self._gripper_speed
+            goal.force = self._gripper_max_effort
+            goal.epsilon.inner = self._gripper_grasp_epsilon
+            goal.epsilon.outer = self._gripper_grasp_epsilon
+            send_future = self._gripper_grasp_client.send_goal_async(goal)
+        else:
+            self.get_logger().info(f"Sending gripper move: width={target:.4f}")
+            goal = Move.Goal()
+            goal.width = target
+            goal.speed = self._gripper_speed
+            send_future = self._gripper_move_client.send_goal_async(goal)
         send_future.add_done_callback(self._on_gripper_goal_response)
 
     def _on_gripper_goal_response(self, future) -> None:
@@ -305,12 +318,6 @@ class FrankaRos2Follower(Node):
 
     def _on_gripper_result(self, future) -> None:
         self._gripper_goal_in_flight = False
-
-    def _on_gripper_feedback(self, feedback_msg) -> None:
-        effort = float(feedback_msg.feedback.effort)
-        msg = JointState()
-        msg.position = [effort]
-        self._gripper_torque_pub.publish(msg)
 
 
 def main(

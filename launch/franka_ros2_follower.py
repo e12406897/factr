@@ -39,12 +39,15 @@ class Args:
     # per-joint contact test shows force-feedback pushes the wrong way.
     torque_sign: float = 1.0
     enable_gripper: bool = True
-    config_file: str = 'franka_example.yaml',
-    # franka_gripper_node's control_msgs/action/GripperCommand action name.
-    gripper_action_name: str = "/panda_gripper/gripper_action"
+    config_file: str = 'franka_example.yaml'
+    # franka_gripper_node's native action names (see FrankaRos2Follower's docstring for
+    # why these are used directly instead of the control_msgs/GripperCommand wrapper).
+    gripper_move_action_name: str = "/panda_gripper/move"
+    gripper_grasp_action_name: str = "/panda_gripper/grasp"
     # Franka Hand max opening width, meters. Assumes linear 0=closed mapping — verify.
     gripper_width_max: float = 0.08
-    gripper_max_effort: float = 20.0
+    gripper_max_effort: float = 70.0
+    gripper_speed: float = 0.1
     gripper_goal_position_threshold: float = 0.005
     gripper_goal_refresh_period_sec: float = 0.1
 
@@ -68,9 +71,11 @@ def main(args: Args) -> None:
         torque_sign=args.torque_sign,
         enable_gripper=args.enable_gripper,
         config_file = 'franka_example.yaml',
-        gripper_action_name=args.gripper_action_name,
+        gripper_move_action_name=args.gripper_move_action_name,
+        gripper_grasp_action_name=args.gripper_grasp_action_name,
         gripper_width_max=args.gripper_width_max,
         gripper_max_effort=args.gripper_max_effort,
+        gripper_speed=args.gripper_speed,
         gripper_goal_position_threshold=args.gripper_goal_position_threshold,
         gripper_goal_refresh_period_sec=args.gripper_goal_refresh_period_sec,
     )
