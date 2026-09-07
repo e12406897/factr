@@ -44,15 +44,20 @@ class FrankaRos2Follower(Node):
       - publishes  on `/gripper/{name}/obs_gripper_torque`:  gripper force feedback
       Uses `franka_gripper_node`'s `control_msgs/action/GripperCommand` action server.
       Actions are goal/result oriented, not built for per-tick streaming (unlike the
-      arm's trajectory topic) — sending a new goal at 500Hz would likely get most goals
-      rejected (no preemption support to count on) and load the DDS layer for no
-      physical benefit, since the gripper mechanism can't track that fast anyway. So a
-      new goal is only sent when the target changes by more than
-      `gripper_goal_position_threshold`, or at least every
-      `gripper_goal_refresh_period_sec` as a keep-alive so feedback (which only flows
-      while a goal is active) doesn't go stale. The radians-to-width conversion
-      (`gripper_actuation_range` -> `gripper_width_max`) assumes a linear mapping with
-      0 = closed — verify against your actual leader gripper convention and adjust.
+      arm's trajectory topic), and continuous position tracking doesn't work well here
+      anyway since `franka::Gripper::move()`/`grasp()` are slow, blocking, non-preemptible
+      calls. So the leader gripper signal is treated as a binary switch instead of a
+      continuous position: below half of `gripper_actuation_range` -> CLOSED (width 0,
+      grasped with `gripper_max_effort`, i.e. `franka::Gripper::grasp()`); at or above
+      half -> OPEN (`gripper_width_max`, via `franka::Gripper::move()`). A new goal is
+      only sent when the target state actually changes (see
+      `gripper_goal_position_threshold`), not on every tick.
+
+      Note: `franka_gripper_node`'s action server computes the actual jaw width as
+      `2 * command.position` (i.e. `command.position` is a per-finger half-width, not
+      the full opening) -- see `onExecuteGripperCommand()` in `gripper_action_server.cpp`.
+      We halve our target width before sending so the server's doubling recovers the
+      width we mean.
 
     Trajectory timing: `trajectory_point_duration_sec` is the MINIMUM time given to
     `joint_trajectory_controller` to reach each new target — used as-is while the
@@ -95,7 +100,9 @@ class FrankaRos2Follower(Node):
         config_file = 'franka_example.yaml',
         gripper_action_name: str = "/panda_gripper/gripper_action",
         gripper_width_max: float = 0.075,
-        gripper_max_effort: float = 20.0,
+        # Only used while CLOSING (franka::Gripper::grasp()) -- move()/opening ignores it.
+        # Franka Hand's max grasping force is ~70N; default to that for a firm "max force" grip.
+        gripper_max_effort: float = 70.0,
         gripper_goal_position_threshold: float = 0.01,
         gripper_goal_refresh_period_sec: float = 0.1,
         var_scale_factor: float = 1.0
@@ -238,9 +245,8 @@ class FrankaRos2Follower(Node):
 
     def _on_gripper_cmd(self, msg: JointState) -> None:
         leader_gripper_pos = float(msg.position[0])
-        print(leader_gripper_pos)
-        fraction = np.clip(leader_gripper_pos / self._gripper_actuation_range, 0.0, 1.0)
-        self._gripper_target_width = float(fraction * self._gripper_width_max)
+        is_closed = leader_gripper_pos < (self._gripper_actuation_range / 2.0)
+        self._gripper_target_width = 0.0 if is_closed else self._gripper_width_max
 
     def _maybe_send_gripper_goal(self) -> None:
         target = self._gripper_target_width
@@ -258,7 +264,11 @@ class FrankaRos2Follower(Node):
         #     return
         self.get_logger().info(f"Sending gripper goal: width={target:.4f}")
         goal = GripperCommand.Goal()
-        goal.command.position = target
+        # franka_gripper_node's action server computes the actual jaw width as
+        # `2 * command.position` (i.e. command.position is a per-finger half-width, not
+        # the full opening) -- see onExecuteGripperCommand() in gripper_action_server.cpp.
+        # Halve our target width here so the server's doubling recovers the width we mean.
+        goal.command.position = target / 2.0
         goal.command.max_effort = self._gripper_max_effort
         self._gripper_last_goal_width = target
         send_future = self._gripper_client.send_goal_async(
