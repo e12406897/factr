@@ -143,6 +143,12 @@ class FrankaRos2Follower(Node):
             self._gripper_max_effort = gripper_max_effort
             self._gripper_goal_position_threshold = gripper_goal_position_threshold
             self._gripper_last_goal_width: Optional[float] = None
+            self._gripper_is_closed = False
+            # franka_gripper_node does not allow overlapping gripper commands -- a second
+            # goal while grasp()/move() is still executing throws and aborts the in-progress
+            # one, which can release an already-applied grasp force. Track whether a goal is
+            # still in flight and skip sending a new one until it completes.
+            self._gripper_goal_in_flight = False
             # gripper_state == 0 means CLOSED (width == 0, fingers touching), so
             # defaulting the target to 0 would command the gripper closed as soon as
             # this node starts — before the leader has sent anything, and before it's
@@ -245,10 +251,21 @@ class FrankaRos2Follower(Node):
 
     def _on_gripper_cmd(self, msg: JointState) -> None:
         leader_gripper_pos = float(msg.position[0])
-        is_closed = leader_gripper_pos < (self._gripper_actuation_range / 2.0)
-        self._gripper_target_width = 0.0 if is_closed else self._gripper_width_max
+        # Hysteresis around the midpoint so leader signal noise near the threshold (e.g.
+        # while holding the trigger steady mid-squeeze) doesn't flip the target back and
+        # forth -- each flip sends a new, unpreemptible gripper command that can interrupt
+        # an in-progress grasp and release its holding force.
+        close_threshold = self._gripper_actuation_range * 0.4
+        open_threshold = self._gripper_actuation_range * 0.6
+        if leader_gripper_pos < close_threshold:
+            self._gripper_is_closed = True
+        elif leader_gripper_pos > open_threshold:
+            self._gripper_is_closed = False
+        self._gripper_target_width = 0.0 if self._gripper_is_closed else self._gripper_width_max
 
     def _maybe_send_gripper_goal(self) -> None:
+        if self._gripper_goal_in_flight:
+            return
         target = self._gripper_target_width
         if (
             self._gripper_last_goal_width is not None
@@ -271,6 +288,7 @@ class FrankaRos2Follower(Node):
         goal.command.position = target / 2.0
         goal.command.max_effort = self._gripper_max_effort
         self._gripper_last_goal_width = target
+        self._gripper_goal_in_flight = True
         send_future = self._gripper_client.send_goal_async(
             goal, feedback_callback=self._on_gripper_feedback
         )
@@ -280,8 +298,13 @@ class FrankaRos2Follower(Node):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().warn("Gripper goal rejected")
+            self._gripper_goal_in_flight = False
             return
-        goal_handle.get_result_async()
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(self._on_gripper_result)
+
+    def _on_gripper_result(self, future) -> None:
+        self._gripper_goal_in_flight = False
 
     def _on_gripper_feedback(self, feedback_msg) -> None:
         effort = float(feedback_msg.feedback.effort)
