@@ -39,10 +39,9 @@ class Args:
     # per-joint contact test shows force-feedback pushes the wrong way.
     torque_sign: float = 1.0
     enable_gripper: bool = True
+    config_file: str = 'franka_example.yaml',
     # franka_gripper_node's control_msgs/action/GripperCommand action name.
     gripper_action_name: str = "/panda_gripper/gripper_action"
-    # Must match your leader config's gripper_teleop.actuation_range.
-    gripper_actuation_range: float = 0.5
     # Franka Hand max opening width, meters. Assumes linear 0=closed mapping — verify.
     gripper_width_max: float = 0.08
     gripper_max_effort: float = 20.0
@@ -68,8 +67,8 @@ def main(args: Args) -> None:
         joint_distance_threshold=args.joint_distance_threshold,
         torque_sign=args.torque_sign,
         enable_gripper=args.enable_gripper,
+        config_file = 'franka_example.yaml',
         gripper_action_name=args.gripper_action_name,
-        gripper_actuation_range=args.gripper_actuation_range,
         gripper_width_max=args.gripper_width_max,
         gripper_max_effort=args.gripper_max_effort,
         gripper_goal_position_threshold=args.gripper_goal_position_threshold,

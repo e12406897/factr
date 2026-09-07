@@ -10,6 +10,9 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+import os
+import yaml
+from python_utils.utils import get_workspace_root
 
 
 class FrankaRos2Follower(Node):
@@ -88,11 +91,12 @@ class FrankaRos2Follower(Node):
         joint_distance_threshold: float = 0.5,
         torque_sign: float = 1.0,
         enable_gripper: bool = True,
+        #define config file which is used bei factr teleoperation to get the same actuation range for the gripper
+        config_file = 'franka_example.yaml',
         gripper_action_name: str = "/panda_gripper/gripper_action",
-        gripper_actuation_range: float = 0.5,
-        gripper_width_max: float = 0.08,
+        gripper_width_max: float = 0.075,
         gripper_max_effort: float = 20.0,
-        gripper_goal_position_threshold: float = 0.005,
+        gripper_goal_position_threshold: float = 0.01,
         gripper_goal_refresh_period_sec: float = 0.1,
         var_scale_factor: float = 1.0
     ):
@@ -121,7 +125,13 @@ class FrankaRos2Follower(Node):
 
         self._enable_gripper = enable_gripper
         if self._enable_gripper:
-            self._gripper_actuation_range = gripper_actuation_range
+            config_path = os.path.join(
+                get_workspace_root(),
+                f"src/factr/factr_teleop/factr_teleop/configs/{config_file}",
+            )
+            with open(config_path, "r") as config_file:
+                config = yaml.safe_load(config_file)
+            self._gripper_actuation_range = config["gripper_teleop"]["actuation_range"]
             self._gripper_width_max = gripper_width_max
             self._gripper_max_effort = gripper_max_effort
             self._gripper_goal_position_threshold = gripper_goal_position_threshold
@@ -228,6 +238,7 @@ class FrankaRos2Follower(Node):
 
     def _on_gripper_cmd(self, msg: JointState) -> None:
         leader_gripper_pos = float(msg.position[0])
+        print(leader_gripper_pos)
         fraction = np.clip(leader_gripper_pos / self._gripper_actuation_range, 0.0, 1.0)
         self._gripper_target_width = float(fraction * self._gripper_width_max)
 
