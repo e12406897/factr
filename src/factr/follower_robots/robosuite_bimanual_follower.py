@@ -130,7 +130,10 @@ class RobosuiteBimanualFollower:
             # release on PyPI as of writing). Verify with
             # `load_composite_controller_config(robot="Panda")["body_parts"].keys()`
             # if this breaks again on a future robosuite version.
-            composite_config["body_parts"]["right"] = arm_controller_config
+            # Merge into (not replace) the default "right" config -- it carries a
+            # required nested "gripper" sub-config that a full overwrite would drop
+            # (robot.py's _load_arm_controllers() asserts on "gripper" being present).
+            composite_config["body_parts"]["right"].update(arm_controller_config)
             controller_configs.append(composite_config)
 
         self._env = robosuite.make(
