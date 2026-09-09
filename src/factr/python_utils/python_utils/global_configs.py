@@ -46,7 +46,10 @@ franka_left_real_zmq_addresses = {
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
 }
 
-franka_sim_right_real_zmq_addresses = {
+# Distinct port sets per side so both sim arms can run simultaneously later for a
+# bimanual sim setup (see mujoco_sim.py's --side and factr_teleop's franka_sim_left.yaml /
+# franka_sim_right.yaml).
+franka_sim_right_zmq_addresses = {
     "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:3099",
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
@@ -54,7 +57,7 @@ franka_sim_right_real_zmq_addresses = {
 
 }
 
-franka_sim_left_real_zmq_addresses = {
+franka_sim_left_zmq_addresses = {
     "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:5099",
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",

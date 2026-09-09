@@ -24,7 +24,8 @@ import rclpy
 from python_utils.global_configs import (
     franka_left_real_zmq_addresses,
     franka_right_real_zmq_addresses,
-    franka_sim_zmq_addresses,
+    franka_sim_left_zmq_addresses,
+    franka_sim_right_zmq_addresses,
 )
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from sensor_msgs.msg import JointState
@@ -66,11 +67,14 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
             zmq_addresses = franka_left_real_zmq_addresses
         elif self.name == "right":
             zmq_addresses = franka_right_real_zmq_addresses
-        elif self.name == "sim":
-            zmq_addresses = franka_sim_zmq_addresses
+        elif self.name == "sim_left":
+            zmq_addresses = franka_sim_left_zmq_addresses
+        elif self.name == "sim_right":
+            zmq_addresses = franka_sim_right_zmq_addresses
         else:
             raise ValueError(
-                f"Invalid robot name '{self.name}'. Expected 'left', 'right', or 'sim'."
+                f"Invalid robot name '{self.name}'. Expected 'left', 'right', "
+                "'sim_left', or 'sim_right'."
             )
 
         # ZMQ publisher used to send joint position commands to the Franka follower arm
