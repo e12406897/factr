@@ -17,47 +17,46 @@
 # ---------------------------------------------------------------------------
 
 
-# Actual network IPs of the Franka control units. No longer used directly below: the
-# original architecture assumed an external libfranka/ZMQ driver running ON these robot
-# control units, but that driver is not part of this repo. `franka_ros2_follower.py`
-# fills that role instead, running in the same devcontainer as the leader (localhost),
-# not on the robot's own control unit — so the ZMQ addresses below bind/connect via
-# `franka_bridge_loopback_ip` instead of these.
-franka_left_ip_address = "172.16.0.1"
-franka_right_ip_address = "172.16.0.3"
-franka_sim_left_ip_address = "127.10.0.1"
-franka_sim_right_ip_address = "127.10.0.3"
+# Each leader/follower pair (left, right, sim_left, sim_right) always runs both ends on
+# the same machine, whichever machine that is -- so bind addresses use loopback, not a
+# real network IP. Loopback is isolated per machine (never collides with another
+# machine's loopback), so any number of pairs can run simultaneously, whether on one
+# shared machine or spread across several, as long as each pair keeps its own ports
+# distinct (which they already do below). Real network IPs would only be needed if a
+# single pair's leader and follower had to run on two different machines -- not the
+# case here.
+franka_bridge_loopback_ip = "127.0.0.1"
 
 
 franka_right_real_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_right_ip_address}:3099",
-    "joint_torque_sub": f"tcp://{franka_right_ip_address}:3087",
-    "raw_joint_torque_sub": f"tcp://{franka_right_ip_address}:3086",
-    "joint_pos_cmd_pub": f"tcp://{franka_right_ip_address}:2098",
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:3099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
 
 }
 
 franka_left_real_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_left_ip_address}:5099",
-    "joint_torque_sub": f"tcp://{franka_left_ip_address}:5087",
-    "raw_joint_torque_sub": f"tcp://{franka_left_ip_address}:5086",
-    "joint_pos_cmd_pub": f"tcp://{franka_left_ip_address}:4098",
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:5099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
 }
 
 # Distinct port sets per side so both sim arms can run simultaneously later for a
 # bimanual sim setup (see mujoco_sim.py's --side and factr_teleop's franka_sim_left.yaml /
 # franka_sim_right.yaml).
 franka_sim_right_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_sim_right_ip_address}:3099",
-    "joint_torque_sub": f"tcp://{franka_sim_right_ip_address}:3087",
-    "raw_joint_torque_sub": f"tcp://{franka_sim_right_ip_address}:3086",
-    "joint_pos_cmd_pub": f"tcp://{franka_sim_right_ip_address}:2098",
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:3099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
 
 }
 
 franka_sim_left_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_sim_left_ip_address}:5099",
-    "joint_torque_sub": f"tcp://{franka_sim_left_ip_address}:5087",
-    "raw_joint_torque_sub": f"tcp://{franka_sim_left_ip_address}:5086",
-    "joint_pos_cmd_pub": f"tcp://{franka_sim_left_ip_address}:4098",
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:5099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
 }
