@@ -35,7 +35,9 @@ class _GripperROSBridge:
                 ),
                 1,
             )
-        self._thread = threading.Thread(target=rclpy.spin, args=(self._node,), daemon=True)
+        self._thread = threading.Thread(
+            target=rclpy.spin, args=(self._node,), daemon=True
+        )
         self._thread.start()
 
 
@@ -130,7 +132,9 @@ class RobosuiteFrankaFollower:
         self._gripper_actuation_range = list(gripper_actuation_range)
         self._enable_var_scale_feedback = enable_var_scale_feedback
         self._var_scale_factor = var_scale_factor
-        self._ext_arm_torque_prev = [np.zeros(num_arm_joints) for _ in range(num_robots)]
+        self._ext_arm_torque_prev = [
+            np.zeros(num_arm_joints) for _ in range(num_robots)
+        ]
 
         arm_controller_config = {
             "type": "JOINT_POSITION",
@@ -184,31 +188,28 @@ class RobosuiteFrankaFollower:
                     f"env '{env_name}' has no table_offset to override "
                     "(only table-based envs like Lift/TwoArmLift do)."
                 )
-            self._env.table_offset = np.array((0.0, 0.0, table_offset_z))
+
+            new_table_offset = np.array((0.0, 0.0, table_offset_z))
+            object_offset = new_table_offset - self._env.table_offset
+            self._env.table_offset = new_table_offset
+
+            self._env.placement_initializer.reference_pos = (
+                self._env.placement_initializer.reference_pos + object_offset
+            )
         self._env.reset()
 
         if num_robots == 2:
             # Desired joint positions
-            qpos_left = np.array([
-                0.0, -0.5, 0.0, -2.0,
-                0.0, 1.5, 0.785
-            ])
+            qpos_left = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, 0.785])
 
-            qpos_right = np.array([
-                0.0, -0.5, 0.0, -2.0,
-                0.0, 1.5, 0.785
-            ])
+            qpos_right = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, 0.785])
 
             # Set robot joint positions
             self._env.robots[0].set_robot_joint_positions(qpos_left)
             self._env.robots[1].set_robot_joint_positions(qpos_right)
 
-            
         else:
-            qpos = np.array([
-                            0.0, -0.5, 0.0, -2.0,
-                            0.0, 1.5, 0.785
-                        ])
+            qpos = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, 0.785])
             self._env.robots[0].set_robot_joint_positions(qpos)
 
         # Forward the simulation
@@ -246,10 +247,11 @@ class RobosuiteFrankaFollower:
     def set_gripper_command(self, side: int, leader_gripper_pos: float) -> None:
         """`side`: index into `names`/`zmq_addresses` as passed to `__init__`. Called
         by the ROS gripper-command subscriber."""
-        fraction = np.clip(leader_gripper_pos / self._gripper_actuation_range[side], 0.0, 1.0)
-        self._gripper_action[side] = (
-            self.GRIPPER_OPEN_ACTION
-            + fraction * (self.GRIPPER_CLOSE_ACTION - self.GRIPPER_OPEN_ACTION)
+        fraction = np.clip(
+            leader_gripper_pos / self._gripper_actuation_range[side], 0.0, 1.0
+        )
+        self._gripper_action[side] = self.GRIPPER_CLOSE_ACTION + fraction * (
+            self.GRIPPER_OPEN_ACTION - self.GRIPPER_CLOSE_ACTION
         )
 
     def _get_contact_torque(self, dof_adr: np.ndarray) -> np.ndarray:
@@ -296,8 +298,12 @@ class RobosuiteFrankaFollower:
                 # current position instead of stalling the whole shared env step (the
                 # other side, if any, may already be teleoperating).
                 arm_cmd = self._env.sim.data.qpos[self._qpos_idx[side]]
-            action_parts.append(np.asarray(arm_cmd[: self._num_arm_joints], dtype=np.float64))
-            action_parts.append(np.array([self._gripper_action[side]], dtype=np.float64))
+            action_parts.append(
+                np.asarray(arm_cmd[: self._num_arm_joints], dtype=np.float64)
+            )
+            action_parts.append(
+                np.array([self._gripper_action[side]], dtype=np.float64)
+            )
         return np.concatenate(action_parts)
 
     def serve(self) -> None:
