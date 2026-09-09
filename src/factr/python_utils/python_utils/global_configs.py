@@ -25,7 +25,8 @@ sim_desktop_ip_address = "172.16.0.9"
 # `franka_bridge_loopback_ip` instead of these.
 franka_left_ip_address = "172.16.0.1"
 franka_right_ip_address = "172.16.0.3"
-franka_sim_ip_address = "127.0.0.1"
+franka_sim_left_ip_address = "127.10.0.1"
+franka_sim_right_ip_address = "127.10.0.3"
 # Leader and franka_ros2_follower.py both run inside the same devcontainer.
 franka_bridge_loopback_ip = "127.0.0.1"
 
@@ -43,13 +44,19 @@ franka_left_real_zmq_addresses = {
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
+}
+
+franka_sim_right_real_zmq_addresses = {
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:3099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
 
 }
 
-franka_sim_zmq_addresses = {
-    "joint_state_sub":  f"tcp://{franka_sim_ip_address}:16099",
-    "joint_torque_sub": f"tcp://{franka_sim_ip_address}:16087",
-    "joint_pos_cmd_pub": f"tcp://{franka_sim_ip_address}:16098",
-    "lpass_filter_sub": f"tcp://{franka_sim_ip_address}:16080",
-    "raw_joint_torque_sub": f"tcp://{franka_sim_ip_address}:16070"
+franka_sim_left_real_zmq_addresses = {
+    "joint_state_sub":  f"tcp://{franka_bridge_loopback_ip}:5099",
+    "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
+    "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
+    "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
 }

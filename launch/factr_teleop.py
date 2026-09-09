@@ -17,9 +17,21 @@
 # ---------------------------------------------------------------------------
 
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
+
 def generate_launch_description():
+
+    side = LaunchConfiguration('side')
+
+    config_file = PythonExpression([
+        "'franka_' + '",
+        side,
+        "' + '.yaml'"
+    ])
+
     factr_teleop_franka = Node(
         package='factr_teleop',
         executable='factr_teleop_franka',
@@ -27,10 +39,14 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         parameters=[
-            {"config_file": "franka_example.yaml"}
+            {'config_file': config_file}
         ]
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'side',
+            description='Franka side: left or right'
+        ),
         factr_teleop_franka,
     ])

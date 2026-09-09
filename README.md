@@ -103,10 +103,12 @@ Before starting the Dev Container connect the power hub boards with your PC and 
 Inside the container
 Either start bash script to start all processes with 
 ```bash
-bash launch/start_real_robot_teleop.sh
+bash launch/start_real_robot_single_teleop.sh left 
 ```
+If wanted the Process can be launched in a save mode with a bounding box
 
-for switching terminal open second terminal and type
+
+for switching tmux terminal open second terminal and type
 ```bash
 sw-hw #for switching to factr:hardware
 sw-br #for switching to factr:bridge
@@ -120,7 +122,7 @@ source /factr/install/setup.bash
 ```
 
 ```bash
-ros2 launch franka_bringup franka.launch.py robot_ip:=franka
+ros2 launch franka_bringup franka.launch.py robot_ip:=franka_ip
 ```
 or
 ```bash
@@ -132,17 +134,17 @@ ros2 run controller_manager spawner joint_trajectory_controller
 ```
 
 ```bash
-python launch/franka_ros2_follower.py --name left
+python launch/franka_ros2_follower.py --name <side> --config_file <config_file> --save_launch <Bool>
 ```
 
 move to home position
 ```bash
-ros2 launch franka_bringup move_to_start_example_controller.launch.py robot_ip:=franka
+ros2 launch franka_bringup move_to_start_example_controller.launch.py robot_ip:=franka_ip
 ```
 
 move to specific position via franka_ros2_follower.py bridge (If it runs your setup is installed correctly)
 ```bash
-ros2 topic pub --once /joint_trajectory_controller/joint_trajectory trajectory_msgs/msg/JointTrajectory "{joint_names: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7], points: [{positions: [0, 0, 0, -1.57, 0, 1.57, 0.77316529], time_from_start: {sec: 4, nanosec: 0}}]}"
+ros2 topic pub --once /joint_trajectory_controller/joint_trajectory trajectory_msgs/msg/JointTrajectory "{joint_names: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7], points: [{positions: <POSITION>, time_from_start: {sec: 4, nanosec: 0}}]}"
 ```
 
 ## FACTR Teleop
@@ -154,7 +156,7 @@ python launch/mujoco_sim.py --initial_arm_qpos 0 0 0 -1.57 0 1.57 0 --initial_gr
 
 Then launch the teleoperation function with ROS2
 ```bash
-ros2 launch launch/factr_teleop.py
+ros2 launch launch/factr_teleop.py side:=<side>
 ```
 
 ## Troubleshooting

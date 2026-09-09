@@ -22,7 +22,9 @@ from python_utils.global_configs import (
 @dataclass
 class Args:
     # Which side's ZMQ addresses to bind/connect to, must match the leader config's `name`.
-    name: str = "right"
+    name: str = "left"
+    # If launching in this mode, the robot will only operate in a defined bounding box, otherwise it will stop
+    save_launch: bool = False
     # franka_ros2 topic this robot's joint_trajectory_controller listens on.
     trajectory_topic: str = "/joint_trajectory_controller/joint_trajectory"
     # franka_ros2 topic franka_robot_state_broadcaster publishes FrankaRobotState on.
@@ -39,7 +41,7 @@ class Args:
     # per-joint contact test shows force-feedback pushes the wrong way.
     torque_sign: float = 1.0
     enable_gripper: bool = True
-    config_file: str = 'franka_example.yaml'
+    config_file: str = 'franka_left.yaml'
     # franka_gripper_node's native action names (see FrankaRos2Follower's docstring for
     # why these are used directly instead of the control_msgs/GripperCommand wrapper).
     gripper_move_action_name: str = "/panda_gripper/move"
@@ -63,6 +65,7 @@ def main(args: Args) -> None:
     follower_main(
         zmq_addresses=zmq_addresses,
         name=args.name,
+        save_launch=args.save_launch,
         node_name=f"factr_franka_ros2_follower_{args.name}",
         trajectory_topic=args.trajectory_topic,
         robot_state_topic=args.robot_state_topic,
@@ -70,7 +73,7 @@ def main(args: Args) -> None:
         joint_distance_threshold=args.joint_distance_threshold,
         torque_sign=args.torque_sign,
         enable_gripper=args.enable_gripper,
-        config_file = 'franka_example.yaml',
+        config_file = 'franka_left.yaml',
         gripper_move_action_name=args.gripper_move_action_name,
         gripper_grasp_action_name=args.gripper_grasp_action_name,
         gripper_width_max=args.gripper_width_max,

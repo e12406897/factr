@@ -91,6 +91,7 @@ class FrankaRos2Follower(Node):
         self,
         zmq_addresses: Dict[str, str],
         name: str = "left",
+        save_launch: bool = False,
         num_arm_joints: int = 7,
         trajectory_topic: str = "/joint_trajectory_controller/joint_trajectory",
         robot_state_topic: str = "/franka_robot_state_broadcaster/robot_state",
@@ -101,7 +102,7 @@ class FrankaRos2Follower(Node):
         torque_sign: float = 1.0,
         enable_gripper: bool = True,
         #define config file which is used bei factr teleoperation to get the same actuation range for the gripper
-        config_file = 'franka_example.yaml',
+        config_file = 'franka_left.yaml',
         gripper_move_action_name: str = "/panda_gripper/move",
         gripper_grasp_action_name: str = "/panda_gripper/grasp",
         gripper_width_max: float = 0.075,
@@ -118,6 +119,7 @@ class FrankaRos2Follower(Node):
         var_scale_factor: float = 1.0
     ):
         super().__init__(node_name)
+        self.save_launch = save_launch
         self._num_arm_joints = num_arm_joints
         self._torque_sign = torque_sign
         self.ee_pos = np.zeros(3)
@@ -205,16 +207,20 @@ class FrankaRos2Follower(Node):
         self._raw_torque_pub.send_message(tau_ext)
 
     def out_of_bounds(self) -> bool:
-        # check x_direction
-        if self.ee_pos[0] > 0.65 or self.ee_pos[0] < 0.3:
-            return True
-        # check y_direction
-        elif self.ee_pos[1] > 0.3 or self.ee_pos[1] < -0.3:
-            return True
-        # check z_direction
-        elif self.ee_pos[2] > 0.7 or self.ee_pos[2] < 0.3:
-            return True
-        # within bounds
+        if self.save_launch:
+            print("bounding box enabled")
+            # check x_direction
+            if self.ee_pos[0] > 0.65 or self.ee_pos[0] < 0.3:
+                return True
+            # check y_direction
+            elif self.ee_pos[1] > 0.3 or self.ee_pos[1] < -0.3:
+                return True
+            # check z_direction
+            elif self.ee_pos[2] > 0.7 or self.ee_pos[2] < 0.3:
+                return True
+            # within bounds
+            else:
+                return False
         else:
             return False
 
@@ -251,8 +257,9 @@ class FrankaRos2Follower(Node):
         if arm_cmd is None:
             return
         if self.out_of_bounds():
-            return
-        target_q = np.array(arm_cmd[: self._num_arm_joints], dtype=np.float64)
+            target_q = self._current_q
+        else:
+            target_q = np.array(arm_cmd[: self._num_arm_joints], dtype=np.float64)
         msg = JointTrajectory()
         msg.joint_names = self.JOINT_NAMES
         point = JointTrajectoryPoint()

@@ -504,9 +504,9 @@ class FACTRTeleop(Node, ABC):
         for i in range(self.num_arm_joints):
             if abs(arm_joint_vel[i]) < self.stiction_comp_enable_speed:
                 if self.stiction_dither_flag[i]:
-                    tau_ss[i] += self.stiction_comp_gain * abs(self.tau_g[i])
+                    tau_ss[i] += self.stiction_comp_gain[i] * abs(self.tau_g[i])
                 else:
-                    tau_ss[i] -= self.stiction_comp_gain * abs(self.tau_g[i])
+                    tau_ss[i] -= self.stiction_comp_gain[i] * abs(self.tau_g[i])
                 self.stiction_dither_flag[i] = ~self.stiction_dither_flag[i]
 
         return tau_ss
