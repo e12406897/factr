@@ -1,6 +1,6 @@
 import threading
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import mujoco
 import numpy as np
@@ -105,6 +105,10 @@ class RobosuiteFrankaFollower:
         names: List[str],
         env_name: str = "Lift",
         env_configuration: str = "default",
+        # Table height in meters for table-based envs (Lift/TwoArmLift). None keeps
+        # robosuite's own hardcoded 0.8; raise it to move the table up relative to the
+        # robot base.
+        table_offset_z: Optional[float] = None,
         num_arm_joints: int = 7,
         enable_ros_gripper: bool = True,
         has_renderer: bool = True,
@@ -155,7 +159,6 @@ class RobosuiteFrankaFollower:
         make_kwargs = dict(
             env_name=env_name,
             robots=["Panda"] * num_robots,
-            table_offset=(0, 0, 0.8)
             controller_configs=controller_configs,
             gripper_types="default",
             has_renderer=has_renderer,
@@ -171,6 +174,17 @@ class RobosuiteFrankaFollower:
             # single-arm envs like Lift don't accept it at all.
             make_kwargs["env_configuration"] = env_configuration
         self._env = robosuite.make(**make_kwargs)
+        # Lift/TwoArmLift hardcode `self.table_offset = np.array((0, 0, 0.8))` in their
+        # __init__ -- it is NOT a make()/constructor kwarg. But _load_model() re-reads the
+        # attribute, and reset() rebuilds the whole model when hard_reset is True (the
+        # default), so overriding it here takes effect on the reset below.
+        if table_offset_z is not None:
+            if not hasattr(self._env, "table_offset"):
+                raise ValueError(
+                    f"env '{env_name}' has no table_offset to override "
+                    "(only table-based envs like Lift/TwoArmLift do)."
+                )
+            self._env.table_offset = np.array((0.0, 0.0, table_offset_z))
         self._env.reset()
 
         if num_robots == 2:

@@ -55,6 +55,9 @@ class Args:
     # TwoArm envs only (ignored for single-arm). If "default" errors out, robosuite's
     # exception message lists the values your installed version accepts.
     env_configuration: str = "default"
+    # Table height in meters (Lift/TwoArmLift). None keeps robosuite's hardcoded 0.8;
+    # increase it to raise the table relative to the robot base.
+    table_offset_z: Optional[float] = None
     has_renderer: bool = True
     control_freq: int = 20
     # JOINT_POSITION controller impedance gains.
@@ -90,6 +93,7 @@ def main(args: Args) -> None:
         names=list(names),
         env_name=env_name,
         env_configuration=args.env_configuration,
+        table_offset_z=args.table_offset_z,
         enable_ros_gripper=args.enable_ros_gripper,
         has_renderer=args.has_renderer,
         control_freq=args.control_freq,
