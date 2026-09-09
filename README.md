@@ -151,7 +151,7 @@ ros2 topic pub --once /joint_trajectory_controller/joint_trajectory trajectory_m
 
 When using Simulation instead of real robot setup, run the following to start the simulation:
 ```bash
-python launch/mujoco_sim.py --initial_arm_qpos 0 0 0 -1.57 0 1.57 0 --initial_gripper_cmd 0.8
+python launch/mujoco_sim.py --initial_arm_qpos 0 0 0 -1.57 0 1.57 0 --initial_gripper_cmd 0.8 --side left
 ```
 
 Then launch the teleoperation function with ROS2

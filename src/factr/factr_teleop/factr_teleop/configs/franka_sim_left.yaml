@@ -70,4 +70,4 @@ controller:
 
 gripper_teleop:
   # The maximum range (in rad) of the leader gripper trigger
-  actuation_range: 0.15
+  actuation_range: 0.8
