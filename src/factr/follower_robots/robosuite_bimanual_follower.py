@@ -123,9 +123,14 @@ class RobosuiteBimanualFollower:
         controller_configs = []
         for _ in range(2):
             composite_config = load_composite_controller_config(robot="Panda")
-            # Single-arm manipulators expose one arm part, keyed "right_arm" by
-            # robosuite convention regardless of the robot's actual scene placement.
-            composite_config["body_parts"]["right_arm"] = arm_controller_config
+            # A single-arm manipulator like Panda exposes exactly one arm part, keyed
+            # "right" (robosuite's Panda.arms == ["right"]) regardless of the robot's
+            # actual left/right placement in the scene -- NOT "right_arm" (that key
+            # only exists on robosuite's unreleased master branch, not the 1.5.2
+            # release on PyPI as of writing). Verify with
+            # `load_composite_controller_config(robot="Panda")["body_parts"].keys()`
+            # if this breaks again on a future robosuite version.
+            composite_config["body_parts"]["right"] = arm_controller_config
             controller_configs.append(composite_config)
 
         self._env = robosuite.make(
