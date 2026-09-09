@@ -25,7 +25,7 @@
 # distinct (which they already do below). Real network IPs would only be needed if a
 # single pair's leader and follower had to run on two different machines -- not the
 # case here.
-franka_bridge_loopback_ip = "127.0.0.1"
+franka_bridge_loopback_ip = "127.0.0.2"
 
 
 franka_right_real_zmq_addresses = {

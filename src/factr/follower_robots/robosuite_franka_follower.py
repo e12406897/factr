@@ -155,9 +155,12 @@ class RobosuiteFrankaFollower:
         make_kwargs = dict(
             env_name=env_name,
             robots=["Panda"] * num_robots,
+            table_offset=(0, 0, 0.8)
             controller_configs=controller_configs,
             gripper_types="default",
             has_renderer=has_renderer,
+            renderer="mjviewer",
+            render_camera=None,
             has_offscreen_renderer=False,
             use_camera_obs=False,
             control_freq=control_freq,
@@ -169,6 +172,34 @@ class RobosuiteFrankaFollower:
             make_kwargs["env_configuration"] = env_configuration
         self._env = robosuite.make(**make_kwargs)
         self._env.reset()
+
+        if num_robots == 2:
+            # Desired joint positions
+            qpos_left = np.array([
+                0.0, -0.5, 0.0, -2.0,
+                0.0, 1.5, 0.785
+            ])
+
+            qpos_right = np.array([
+                0.0, -0.5, 0.0, -2.0,
+                0.0, 1.5, 0.785
+            ])
+
+            # Set robot joint positions
+            self._env.robots[0].set_robot_joint_positions(qpos_left)
+            self._env.robots[1].set_robot_joint_positions(qpos_right)
+
+            
+        else:
+            qpos = np.array([
+                            0.0, -0.5, 0.0, -2.0,
+                            0.0, 1.5, 0.785
+                        ])
+            self._env.robots[0].set_robot_joint_positions(qpos)
+
+        # Forward the simulation
+        self._env.sim.forward()
+
         # Dense jacobian so `efc_J` (used by `_get_contact_torque`) comes back as a
         # plain (nefc, nv) array -- see MujocoFrankaFollower for the same setup.
         self._env.sim.model.opt.jacobian = mujoco.mjtJacobian.mjJAC_DENSE
