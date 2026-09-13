@@ -40,7 +40,7 @@ class FrankaRos2Follower(Node):
     adjust this constructor argument if needed.
 
     Gripper (ROS, not ZMQ — matches FACTRTeleopFrankaZMQ.set_up_communication()):
-      - subscribes to `/factr_teleop/{name}/cmd_gripper_pos`: leader gripper position
+      - subscribes to `/factr_teleop/{side}/cmd_gripper_pos`: leader gripper position
       Uses `franka_gripper_node`'s native `franka_msgs/action/Grasp` and
       `franka_msgs/action/Move` action servers directly (not the `control_msgs/GripperCommand`
       wrapper -- that wrapper always calls `franka::Gripper::grasp()` with a tight default
@@ -90,7 +90,7 @@ class FrankaRos2Follower(Node):
     def __init__(
         self,
         zmq_addresses: Dict[str, str],
-        name: str = "left",
+        side: str = "left",
         save_launch: bool = False,
         num_arm_joints: int = 7,
         trajectory_topic: str = "/joint_trajectory_controller/joint_trajectory",
@@ -176,7 +176,7 @@ class FrankaRos2Follower(Node):
             self._gripper_grasp_client = ActionClient(self, Grasp, gripper_grasp_action_name)
             self._gripper_cmd_sub = self.create_subscription(
                 JointState,
-                f"/factr_teleop/{name}/cmd_gripper_pos",
+                f"/factr_teleop/{side}/cmd_gripper_pos",
                 self._on_gripper_cmd,
                 10,
             )
@@ -329,13 +329,13 @@ class FrankaRos2Follower(Node):
 
 def main(
     zmq_addresses: Dict[str, str],
-    name: str = "left",
+    side: str = "left",
     node_name: str = "factr_franka_ros2_follower",
     **kwargs,
 ) -> None:
     rclpy.init()
     follower = FrankaRos2Follower(
-        zmq_addresses=zmq_addresses, name=name, node_name=node_name, **kwargs
+        zmq_addresses=zmq_addresses, side=side, node_name=node_name, **kwargs
     )
     try:
         rclpy.spin(follower)

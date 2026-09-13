@@ -22,7 +22,7 @@ from python_utils.global_configs import (
 @dataclass
 class Args:
     # Which side's ZMQ addresses to bind/connect to, must match the leader config's `name`.
-    name: str = "left"
+    side: str = "left"
     # If launching in this mode, the robot will only operate in a defined bounding box, otherwise it will stop
     save_launch: bool = False
     # franka_ros2 topic this robot's joint_trajectory_controller listens on.
@@ -55,25 +55,25 @@ class Args:
 
 
 def main(args: Args) -> None:
-    if args.name == "left":
+    if args.side == "left":
         zmq_addresses = franka_left_real_zmq_addresses
-    elif args.name == "right":
+    elif args.side == "right":
         zmq_addresses = franka_right_real_zmq_addresses
     else:
-        raise ValueError(f"Invalid name '{args.name}'. Expected 'left' or 'right'.")
+        raise ValueError(f"Invalid side '{args.side}'. Expected 'left' or 'right'.")
 
     follower_main(
         zmq_addresses=zmq_addresses,
-        name=args.name,
+        side=args.side,
         save_launch=args.save_launch,
-        node_name=f"factr_franka_ros2_follower_{args.name}",
+        node_name=f"factr_franka_ros2_follower_{args.side}",
         trajectory_topic=args.trajectory_topic,
         robot_state_topic=args.robot_state_topic,
         trajectory_point_duration_sec=args.trajectory_point_duration_sec,
         joint_distance_threshold=args.joint_distance_threshold,
         torque_sign=args.torque_sign,
         enable_gripper=args.enable_gripper,
-        config_file = 'franka_left.yaml',
+        config_file = args.config_file,
         gripper_move_action_name=args.gripper_move_action_name,
         gripper_grasp_action_name=args.gripper_grasp_action_name,
         gripper_width_max=args.gripper_width_max,

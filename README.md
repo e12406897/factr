@@ -1,173 +1,200 @@
+<h1>FACTR Teleop with Manipulator Redundancy: Low-Cost Force-Feedback Teleoperation</h1>
 
-<h1> FACTR Teleop: Low-Cost Force-Feedback Teleoperation</h1>
+This repo extends [FACTR](https://github.com/RaindragonD/factr/) teleoperation for redundant robots, exploiting the manipulator's null-space motion to maximize haptic feedback for minimal joint torque.
 
+[Project Page](https://jasonjzliu.com/factr/) | [arXiv](https://arxiv.org/abs/2502.17432) | [FACTR](https://github.com/RaindragonD/factr/) | [FACTR Hardware](https://github.com/JasonJZLiu/FACTR_Hardware)
 
-
-#### [Jason Jingzhou Liu](https://jasonjzliu.com)<sup>\*</sup>, [Yulong Li](https://yulongli42.github.io)<sup>\*</sup>, [Kenneth Shaw](https://kennyshaw.net), [Tony Tao](https://tony-tao.com), [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/), [Deepak Pathak](https://www.cs.cmu.edu/~dpathak/)
-_Carnegie Mellon University_
-
-[Project Page](https://jasonjzliu.com/factr/) | [arXiV](https://arxiv.org/abs/2502.17432) | [FACTR](https://github.com/RaindragonD/factr/) | [FACTR Hardware](https://github.com/JasonJZLiu/FACTR_Hardware)
-
-<h1> </h1>
-<img src="assets/main_teaser.jpg" alt="teaser" width="750"/>
-
-<br>
+On top of the original FACTR teleop code, this repo adds:
+- a `franka_ros2` bridge for driving real Franka arms (single-arm and bimanual),
+- a `robosuite`-based simulation for single-arm and bimanual setups.
 
 ## Catalog
+- [Repository Overview](#repository-overview)
 - [Installation](#installation)
-- [FACTR Teleop](#factr-teleop)
-- [Data Collection](#data-collection)
-- [Training and Deployment](#training-and-deployment)
-- [License and Acknowledgements](#license-and-acknowledgements)
-- [Citation](#citation)
+- [Launch Robosuite Simulation](#launch-robosuite-simulation)
+- [Launch Real Robot System](#launch-real-robot-system)
+- [Launch FACTR Teleoperation](#launch-factr-teleoperation)
+- [Troubleshooting](#troubleshooting)
 
+## Repository Overview
+
+```
+factr/
+├── .devcontainer/          # Dockerfile config, entrypoint, container setup script
+├── launch/                 # Everything you actually run (Python + bash + ROS2 launch files)
+│   ├── factr_teleop.py             # ROS2 launch file for the leader (FACTR teleop node)
+│   ├── franka_ros2_follower.py     # CLI: real-robot follower bridge (single arm)
+│   ├── franka_dual_arm.launch.py   # ROS2 launch file: two namespaced franka.launch.py (bimanual hardware)
+│   ├── robosuite_sim.py            # CLI: robosuite follower sim (single arm or bimanual)
+│   ├── start_real_robot_single_teleop.sh  # one-command tmux launcher, single-arm real robot
+│   ├── start_bridge_sequence.sh    # helper called by the script above
+│   ├── collect_data.py             # behavior-cloning data collection
+│   ├── rollout.py                  # policy rollout
+│   └── read_franka_q_offset.py     # small debug helper (leader/follower joint offset readout)
+├── src/
+│   ├── factr/
+│   │   ├── factr_teleop/           # leader-side teleop node (ROS2 package "factr_teleop")
+│   │   │   └── factr_teleop/configs/  # per-side YAML configs (franka_left.yaml, franka_right.yaml, franka_sim_left.yaml, franka_sim_right.yaml)
+│   │   ├── follower_robots/        # follower bridges: franka_ros2_follower.py (real), robosuite_franka_follower.py (sim)
+│   │   ├── python_utils/           # shared ZMQ messenger + global ZMQ address/config table
+│   │   ├── bc/                     # behavior cloning: data recording, rollout
+│   │   └── cameras/                # camera drivers/utilities
+│   └── franka_ros2/                # third-party, git-cloned by post_create.sh (not committed)
+├── requirements.txt         # Python deps installed into the container image
+└── Dockerfile
+```
+
+**Leader ↔ follower communication** always uses ZMQ (see `src/factr/python_utils/python_utils/global_configs.py` for the address table), regardless of whether the follower is real hardware or `robosuite`. The gripper command/feedback channel is a plain ROS2 topic instead (`/factr_teleop/<side>/cmd_gripper_pos`). Leader and follower of one side must always run in the same ZMQ network namespace — see the [Troubleshooting](#troubleshooting) note on `franka_bridge_loopback_ip`.
+
+Each side (`left`, `right`, `sim_left`, `sim_right`) has its own YAML config under `src/factr/factr_teleop/factr_teleop/configs/`. It sets the Dynamixel ports/servo types, joint signs, calibration pose, controller gains, and gripper actuation range for that specific leader arm.
 
 ## Installation
 
-This repository requires **ROS 2**.
-If you have not installed ROS 2 yet, follow the official [ROS 2 installation guide](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html).
-
-### Provided ROS 2 Packages
-
-The following ROS 2 packages are included in this repository:
-
-- `factr_teleop`
-- `bc`
-- `cameras`
-- `python_utils`
-
-These packages are located in:
-
-```
-<repo_root>/src
-```
-
-### ROS 2 Workspace Setup
-
-These packages must reside within a **ROS 2 workspace**. If you do not already have one, create a workspace by following the [ROS 2 workspace tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html).
+Before building the dev container, connect the teleoperation hardware:
+1. **Check motor voltage before plugging in** — the wrong voltage can permanently damage a Dynamixel motor.
+2. Connect the power hub boards to your PC, then verify they are detected:
+   ```bash
+   ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
+   ```
 
 Then:
+1. Install Docker Engine and the VS Code Dev Containers extension.
+2. Open the `factr` directory in VS Code and "Rebuild and Reopen in Container". This builds the image and runs `post_create.sh` (clones `franka_ros2`, installs the Dynamixel SDK, runs `colcon build`).
 
-1. Copy the four provided packages into your workspace's `src/` directory.
-2. Ensure to source the ROS2 setup script in your terminal
-   ```bash
-   source /opt/ros/<ROS-Distribution>/setup.bash
-   ```
-   Note that this command should be run everytime you open a new terminal.
-3. From the root of your workspace, build the workspace via:
-   ```bash
-   colcon build --symlink-install
-   ```
-   This should create the following folders in your workspace root
-   ```bash
-   build  install  log  src
-   ```
-4. From the root of your workspace, source the overlay via
-   ```bash
-   source install/local_setup.bash
-   ```
-   Note that this command should also be run everytime you open a new terminal.
+The container is pinned to these versions for Franka Robot System **5.2.7**:
 
-> For more guidance, refer to the [ROS 2 Tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html).
+| Package | Version |
+|---|---|
+| `franka_ros2` | v0.1.0 |
+| `libfranka` | 0.10.0 |
+| ROS2 Humble | July 2023 snapshot |
 
-### Additional Python Dependencies
+If your robot runs a different system version, update all three before building:
+1. [libfranka version for your Franka System version](https://frankarobotics.github.io/docs/doc/libfranka/docs/compatibility_matrix.html)
+2. [franka_ros2 version for that libfranka version](https://frankarobotics.github.io/docs/doc/franka_ros2_humble/franka_ros2/doc/compatibility_matrix.html)
+3. Match the ROS2 Humble snapshot date in the `Dockerfile` to that `franka_ros2` release date ([franka_ros2 tags](https://github.com/frankarobotics/franka_ros2/tags))
 
-Install [ZMQ](https://zeromq.org/):
-
+`robosuite` is **not** part of the container image (it conflicts with the pinned `mujoco`/`numpy` versions used elsewhere — see [Troubleshooting](#troubleshooting)) and must be installed manually before first use:
 ```bash
-pip install zmq
-```
-Install [Pinocchio](https://stack-of-tasks.github.io/pinocchio/):
-```bash
-sudo apt install ros-<ROS-Distribution>-pinocchio
-```
-- For example,
-   ```bash
-   sudo apt install ros-humble-pinocchio
-   ```
-Alternatively, try the following via pip.
-```bash
-python -m pip install pin
+pip install --user "mujoco<3.10" "robosuite" "coverage>=7"
 ```
 
-Finally, navigate to the Dynamixel submodule and install it via:
+## Getting Started
+
+Try the simulation before touching real hardware.
+
+### Launch Robosuite Simulation
+
+Single arm, in a fresh terminal inside the container:
 ```bash
-cd <repo_root>/src/factr_teleop/factr_teleop/dynamixel
-pip install -e python
+python launch/robosuite_sim.py --side left --table-offset-z 1.3
 ```
 
-Before starting the Dev Container connect the power hub boards with your PC and check if you find them:
-
-
-
-Inside the container
-Either start bash script to start all processes with 
+Bimanual (one process drives both arms — a shared physics step is required):
 ```bash
-bash launch/start_real_robot_single_teleop.sh left 
-```
-If wanted the Process can be launched in a save mode with a bounding box
-
-
-for switching tmux terminal open second terminal and type
-```bash
-sw-hw #for switching to factr:hardware
-sw-br #for switching to factr:bridge
+python launch/robosuite_sim.py --side both --table-offset-z 1.3
 ```
 
-or start with individual commands:
+`--table-offset-z` raises the table (meters) relative to the robot base; omit it to use robosuite's default. Run `python launch/robosuite_sim.py --help` for all options (env name, controller gains, torque-feedback filtering, renderer).
+
+Then launch the matching leader(s) — see [Launch FACTR Teleoperation](#launch-factr-teleoperation) with `side:=sim_left` / `side:=sim_right`.
+
+## Launch Real Robot System
+
+> **Safety:** the Franka system enforces collision/reflex thresholds and stops the robot when they're exceeded. Raising them is covered in [Troubleshooting](#increasing-franka-robot-system-thresholds-with-franka_ros2-v010).
+
+### Single Arm — One-Command Script
+
+```bash
+bash launch/start_real_robot_single_teleop.sh left
+```
+This kills leftover processes, launches `franka.launch.py`, spawns `joint_trajectory_controller`, moves the arm to `[0, 0, 0, -1.57, 0, 1.57, 0.785]`, then starts the `franka_ros2` bridge — all inside `tmux`.
+
+Add `True` to enable the bounding-box safety mode (follower stops once it leaves a predefined workspace box, defined in `src/factr/follower_robots/franka_ros2_follower.py`):
+```bash
+bash launch/start_real_robot_single_teleop.sh left True
+```
+
+Switch between the `tmux` windows from a **second, fresh terminal** (the aliases are added to `.bashrc` by the script on first run):
+```bash
+sw-hw   # switch to factr:hardware window
+sw-br   # switch to factr:bridge window
+```
+
+### Single Arm — Manual Commands
+
+Use this if you need to run a step individually (e.g. after the one-shot script failed midway).
 
 ```bash
 source /opt/ros/humble/setup.bash
 source /factr/install/setup.bash
+ros2 launch franka_bringup franka.launch.py robot_ip:=<robot_ip>
 ```
 
-```bash
-ros2 launch franka_bringup franka.launch.py robot_ip:=franka_ip
-```
-or
-```bash
-ros2 launch launch/franka_dual_arm.launch.py     left_robot_ip:=<left_ip> right_robot_ip:=<right_ip>
-```
-
+In a new terminal, spawn the trajectory controller:
 ```bash
 ros2 run controller_manager spawner joint_trajectory_controller
 ```
 
-```bash
-python launch/franka_ros2_follower.py --name <side> --config_file <config_file> --save_launch <Bool>
-```
-
-move to home position
-```bash
-ros2 launch franka_bringup move_to_start_example_controller.launch.py robot_ip:=franka_ip
-```
-
-move to specific position via franka_ros2_follower.py bridge (If it runs your setup is installed correctly)
+Move the arm to a known pose before starting the bridge — either a specific pose:
 ```bash
 ros2 topic pub --once /joint_trajectory_controller/joint_trajectory trajectory_msgs/msg/JointTrajectory "{joint_names: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7], points: [{positions: <POSITION>, time_from_start: {sec: 4, nanosec: 0}}]}"
 ```
-
-## FACTR Teleop
-
-When using Simulation instead of real robot setup, run the following to start the simulation:
+or the factory home position:
 ```bash
-python launch/mujoco_sim.py --initial_arm_qpos 0 0 0 -1.57 0 1.57 0 --initial_gripper_cmd 0.8 --side left
+ros2 launch franka_bringup move_to_start_example_controller.launch.py robot_ip:=<robot_ip>
 ```
 
-Then launch the teleoperation function with ROS2
+Then start the `franka_ros2` bridge:
+```bash
+python launch/franka_ros2_follower.py --side <side> --config-file <config_file> --save-launch
+```
+- `<side>`: `left` or `right`.
+- `<config_file>`: the matching FACTR teleop config, e.g. `franka_left.yaml` — keeping this identical to the leader's config avoids parameter mismatches (e.g. gripper actuation range) between the two processes.
+- `--save-launch`: enables the bounding-box safety mode (omit for unrestricted motion).
+
+### Bimanual System
+
+There is no one-command script for bimanual real hardware yet — launch each piece manually.
+
+1. Bring up both arms, each pushed into its own ROS2 namespace (`/left`, `/right`):
+   ```bash
+   ros2 launch launch/franka_dual_arm.launch.py left_robot_ip:=<left_ip> right_robot_ip:=<right_ip>
+   ```
+2. Spawn the trajectory controller for each side:
+   ```bash
+   ros2 run controller_manager spawner joint_trajectory_controller --controller-manager /left/controller_manager
+   ros2 run controller_manager spawner joint_trajectory_controller --controller-manager /right/controller_manager
+   ```
+3. Start one bridge process per side, pointing at the namespaced topics:
+   ```bash
+   python launch/franka_ros2_follower.py --side left \
+       --config-file franka_left.yaml \
+       --trajectory-topic /left/joint_trajectory_controller/joint_trajectory \
+       --robot-state-topic /left/franka_robot_state_broadcaster/robot_state
+
+   python launch/franka_ros2_follower.py --side right \
+       --config-file franka_right.yaml \
+       --trajectory-topic /right/joint_trajectory_controller/joint_trajectory \
+       --robot-state-topic /right/franka_robot_state_broadcaster/robot_state
+   ```
+
+## Launch FACTR Teleoperation
+
+Launch the leader for each side in its own terminal, matching whatever follower/simulation is already running. Controller behavior (gravity compensation, friction compensation, etc.) and per-side hardware parameters live in `src/factr/factr_teleop/factr_teleop/configs/`.
+
 ```bash
 ros2 launch launch/factr_teleop.py side:=<side>
 ```
+`<side>` ∈ `left`, `right`, `sim_left`, `sim_right` — this also selects the config file (`franka_<side>.yaml`).
 
 ## Troubleshooting
-Increasing the thresholds with franka_ros2 v0.1.0 is not directly possible. Adjusting the force thresholds is possible by setting it directly in the robot.cpp file:
-Then launch the teleoperation function with ROS2
-```bash
-src/franka_ros2/franka_hardware/src/robot.cpp
-```
 
-Then setting it via
-```bash
+### Increasing Franka Robot System Thresholds with franka_ros2 v0.1.0
+
+`franka_ros2` v0.1.0 has no runtime API to raise collision/force thresholds. Patch them directly in `src/franka_ros2/franka_hardware/src/robot.cpp`, inside the `Robot` constructor, right after the `franka::Robot` connection is established:
+
+```cpp
 Robot::Robot(const std::string& robot_ip, const rclcpp::Logger& logger) {
   tau_command_.fill(0.);
   franka::RealtimeConfig rt_config = franka::RealtimeConfig::kEnforce;
@@ -177,39 +204,29 @@ Robot::Robot(const std::string& robot_ip, const rclcpp::Logger& logger) {
   }
   robot_ = std::make_unique<franka::Robot>(robot_ip, rt_config);
 
-  // Added: raise collision/reflex thresholds from libfranka's conservative
-  // defaults, matching our teleop workload (see franka_control_node.yaml).
+  // Raised from libfranka's conservative defaults to match our teleop workload.
   robot_->setCollisionBehavior(
-      {{80, 80, 80, 80, 30, 30, 30}},    // lower_torque_thresholds_acceleration
-      {{80, 80, 80, 80, 30, 30, 30}},    // upper_torque_thresholds_acceleration
-      {{25, 25, 22, 20, 19, 17, 14}},    // lower_torque_thresholds_nominal
-      {{100, 100, 100, 100, 100, 100, 100}}, // upper_torque_thresholds_nominal
-      {{80, 80, 80, 30, 30, 30}},        // lower_force_thresholds_acceleration
-      {{80, 80, 80, 30, 30, 30}},        // upper_force_thresholds_acceleration
-      {{100, 100, 100, 100, 100, 100}},  // lower_force_thresholds_nominal
-      {{100, 100, 100, 100, 100, 100}}); // upper_force_thresholds_nominal
+      {{80, 80, 80, 80, 30, 30, 30}},         // lower_torque_thresholds_acceleration
+      {{80, 80, 80, 80, 30, 30, 30}},         // upper_torque_thresholds_acceleration
+      {{25, 25, 22, 20, 19, 17, 14}},         // lower_torque_thresholds_nominal
+      {{100, 100, 100, 100, 100, 100, 100}},  // upper_torque_thresholds_nominal
+      {{80, 80, 80, 30, 30, 30}},             // lower_force_thresholds_acceleration
+      {{80, 80, 80, 30, 30, 30}},             // upper_force_thresholds_acceleration
+      {{100, 100, 100, 100, 100, 100}},       // lower_force_thresholds_nominal
+      {{100, 100, 100, 100, 100, 100}});      // upper_force_thresholds_nominal
 
   model_ = std::make_unique<franka::Model>(robot_->loadModel());
   franka_hardware_model_ = std::make_unique<Model>(model_.get());
 }
 ```
 
-To apply this in your currently running container rebuild the package:
+Rebuild the package inside the running container to apply it:
 ```bash
 colcon build --packages-select franka_hardware
 ```
 
+### ZMQ bind address / port already in use
+Leader and follower for one side communicate over `127.0.0.2` (see `franka_bridge_loopback_ip` in `src/factr/python_utils/python_utils/global_configs.py`) — not `127.0.0.1`. That's deliberate: VS Code's automatic port forwarding can latch onto a port once used on `127.0.0.1` and hold it open on the host even after the original process exits, causing `Address already in use` on the next launch. If you still hit that error, check the "PORTS" tab in VS Code's terminal panel and stop forwarding the affected port, or pick another loopback address (any `127.0.0.0/8` address works).
 
-## Citation
-If you find this codebase useful, feel free to cite our work!
-<div style="display:flex;">
-<div>
-
-```bibtex
-@article{factr,
-  title={FACTR: Force-Attending Curriculum Training for Contact-Rich Policy Learning},
-  author={Liu, Jason Jingzhou and Li, Yulong and Shaw, Kenneth and Tao, Tony and Salakhutdinov, Ruslan and Pathak, Deepak},
-  journal={arXiv preprint arXiv:2502.17432},
-  year={2025}
-}
-```
+### Varying feedback between Dynamixel motors
+Make via Dynamixel Wizard sure, that all motors have the same gains applied. Different gains can lead to different control characteristics 

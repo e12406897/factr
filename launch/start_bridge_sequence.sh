@@ -19,7 +19,7 @@ if [[ "$SAVE_LAUNCH" != "True" && "$SAVE_LAUNCH" != "False" ]]; then
     exit 1
 fi
 
-CONFIG_FILE="franka_${SIDE}"
+CONFIG_FILE="franka_${SIDE}.yaml"
 
 cd /factr
 source /opt/ros/humble/setup.bash
@@ -35,12 +35,12 @@ ros2 topic pub --once /joint_trajectory_controller/joint_trajectory trajectory_m
 echo "[3/3] Starting franka_ros2_follower.py bridge..."
 if [[ "$SAVE_LAUNCH" == "True" ]]; then
     python3 launch/franka_ros2_follower.py \
-        --name "$SIDE" \
-        --config_file "$CONFIG_FILE" \
-        --save_launch
+        --side "$SIDE" \
+        --config-file "$CONFIG_FILE" \
+        --save-launch
 else
     python3 launch/franka_ros2_follower.py \
-        --name "$SIDE" \
-        --config_file "$CONFIG_FILE"
+        --side "$SIDE" \
+        --config-file "$CONFIG_FILE"
 fi
     
