@@ -74,10 +74,7 @@ If your robot runs a different system version, update all three before building:
 2. [franka_ros2 version for that libfranka version](https://frankarobotics.github.io/docs/doc/franka_ros2_humble/franka_ros2/doc/compatibility_matrix.html)
 3. Match the ROS2 Humble snapshot date in the `Dockerfile` to that `franka_ros2` release date ([franka_ros2 tags](https://github.com/frankarobotics/franka_ros2/tags))
 
-`robosuite` is **not** part of the container image (it conflicts with the pinned `mujoco`/`numpy` versions used elsewhere — see [Troubleshooting](#troubleshooting)) and must be installed manually before first use:
-```bash
-pip install --user "mujoco<3.10" "robosuite" "coverage>=7"
-```
+`robosuite` (and the compatible `mujoco`/`numpy` versions it needs — see [Troubleshooting](#troubleshooting)) is installed via `requirements.txt` as part of the image build.
 
 ## Getting Started
 
