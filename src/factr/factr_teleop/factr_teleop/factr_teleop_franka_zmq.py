@@ -138,6 +138,28 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
                 1,
             )
 
+        if self.enable_torque_optimization:
+            # ZMQ subscribers for the follower's end-effector external wrench
+            # [Fx,Fy,Fz,Mx,My,Mz] and O_T_EE (4x4, base frame), used by
+            # null_space_torque_optimization/W_torque_optimization.
+            self.franka_eef_wrench_sub = ZMQSubscriber(zmq_addresses["eef_wrench_sub"])
+            self.franka_o_t_ee_sub = ZMQSubscriber(zmq_addresses["o_t_ee_sub"])
+
+            while self.franka_eef_wrench_sub.message is None:
+                self.get_logger().info(
+                    f"Has not received Franka {self.name}'s end-effector wrench"
+                )
+                time.sleep(0.1)
+            while self.franka_o_t_ee_sub.message is None:
+                self.get_logger().info(
+                    f"Has not received Franka {self.name}'s O_T_EE"
+                )
+                time.sleep(0.1)
+
+            self.obs_franka_eef_wrench_pub = self.create_publisher(
+                JointState, f"/franka/{self.name}/obs_eef_wrench", 10
+            )
+
     def _gripper_external_torque_callback(self, data):
         gripper_external_torque = data.position[0]
         self.gripper_external_torque = (
@@ -166,6 +188,16 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
         
 
         return external_torque
+
+    def get_follower_eef_external_wrench(self):
+        wrench = self.franka_eef_wrench_sub.message
+        self.obs_franka_eef_wrench_pub.publish(create_array_msg(wrench))
+        return wrench
+
+    def get_follower_o_T_eef(self):
+        # Sent flattened column-major (matches libfranka's own O_T_EE convention on
+        # the real robot, and the sim follower mirrors it) -- reshape with order="F".
+        return np.array(self.franka_o_t_ee_sub.message).reshape(4, 4, order="F")
 
     def update_communication(self, leader_arm_pos, leader_gripper_pos):
         # send leader arm position as joint position target to the follower Franka arm

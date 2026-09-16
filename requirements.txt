@@ -11,6 +11,7 @@ glfw==2.10.0
 idna==3.18
 importlib_resources==7.1.0
 lxml==6.1.1
+mujoco==3.9.0
 numpy==1.26.4
 pathlib==1.0.1
 protobuf==7.35.1

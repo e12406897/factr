@@ -227,6 +227,13 @@ class RobosuiteFrankaFollower:
             np.array(self._env.robots[i]._ref_joint_vel_indexes, dtype=int)
             for i in range(num_robots)
         ]
+        # Single-arm Panda's arm is keyed "right" in robosuite's per-robot dicts
+        # (robot_model.eef_name / ee_force / ee_torque), same convention as the
+        # controller_configs["body_parts"]["right"] key above.
+        self._eef_name = [
+            self._env.robots[i].robot_model.eef_name["right"]
+            for i in range(num_robots)
+        ]
 
         self._cmd_sub = [ZMQSubscriber(a["joint_pos_cmd_pub"]) for a in zmq_addresses]
         self._state_pub = [ZMQPublisher(a["joint_state_sub"]) for a in zmq_addresses]
@@ -234,6 +241,8 @@ class RobosuiteFrankaFollower:
         self._raw_torque_pub = [
             ZMQPublisher(a["raw_joint_torque_sub"]) for a in zmq_addresses
         ]
+        self._eef_wrench_pub = [ZMQPublisher(a["eef_wrench_sub"]) for a in zmq_addresses]
+        self._o_t_ee_pub = [ZMQPublisher(a["o_t_ee_sub"]) for a in zmq_addresses]
 
         # Default gripper target to fully open (robosuite -1) so a leader that hasn't
         # sent anything yet doesn't get commanded closed at start -- same rationale as
@@ -267,6 +276,28 @@ class RobosuiteFrankaFollower:
         efc_J = data.efc_J.reshape(nefc, model.nv)
         is_contact = np.isin(data.efc_type[:nefc], self._CONTACT_CONSTRAINT_TYPES)
         return efc_J[is_contact][:, dof_adr].T @ data.efc_force[:nefc][is_contact]
+
+    def _get_eef_wrench_and_pose(self, side: int) -> tuple:
+        """Returns (wrench, o_T_eef): the external force-moment wrench at the
+        end-effector [Fx,Fy,Fz,Mx,My,Mz] and the end-effector pose (4x4), both
+        expressed in robot `side`'s own base frame -- matches `FrankaRobotState`'s
+        `o_f_ext_hat_k`/`o_t_ee` on the real robot.
+
+        `ee_force`/`ee_torque` are read from robosuite's own eef force/torque sensor
+        (world frame) and rotated into the base frame via `base_ori`. NOTE: this
+        assumes the default Panda model actually carries a force/torque sensor at the
+        eef site -- verify empirically (e.g. press the gripper against the table and
+        confirm nonzero readings) before trusting the magnitude/direction.
+        """
+        robot = self._env.robots[side]
+        # "right" is the arm key (matches controller_configs["body_parts"]["right"]
+        # above), not the eef body/site name used below for pose_in_base_from_name.
+        force_world = np.asarray(robot.ee_force["right"])
+        torque_world = np.asarray(robot.ee_torque["right"])
+        base_ori = robot.base_ori  # world-frame rotation matrix of the base
+        wrench = np.concatenate([base_ori.T @ force_world, base_ori.T @ torque_world])
+        o_T_eef = robot.pose_in_base_from_name(self._eef_name[side])
+        return wrench, o_T_eef
 
     def _filter_torque(self, side: int, curr_ext_torque: np.ndarray) -> np.ndarray:
         """Adaptive smoothing identical to `MujocoFrankaFollower._get_arm_external_torque`:
@@ -323,6 +354,10 @@ class RobosuiteFrankaFollower:
                 self._state_pub[side].send_message(q)
                 self._torque_pub[side].send_message(-filtered_tau)
                 self._raw_torque_pub[side].send_message(raw_tau)
+
+                wrench, o_T_eef = self._get_eef_wrench_and_pose(side)
+                self._eef_wrench_pub[side].send_message(wrench)
+                self._o_t_ee_pub[side].send_message(o_T_eef.flatten(order="F"))
 
             elapsed = time.time() - step_start
             if elapsed < self._control_period_sec:

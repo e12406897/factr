@@ -169,6 +169,19 @@ class FACTRTeleop(Node, ABC):
         self.torque_feedback_damping = self.config["controller"]["torque_feedback"][
             "damping"
         ]
+        # torque optimization (redundancy resolution via end-effector force/moment
+        # perturbation, see null_space_torque_optimization/W_torque_optimization)
+        self.enable_torque_optimization = self.config["controller"][
+            "torque_optimization"
+        ]["enable"]
+        self.gain_null_external_forces = np.array(
+            self.config["controller"]["torque_optimization"][
+                "gain_null_external_forces"
+            ]
+        )
+        self.torque_opt_gain = np.array(
+            self.config["controller"]["torque_optimization"]["torque_opt_gain"]
+        )
         # gripper feedback
         self.enable_gripper_feedback = self.config["controller"]["gripper_feedback"][
             "enable"
@@ -558,6 +571,8 @@ class FACTRTeleop(Node, ABC):
         null_space_projector = np.eye(self.num_arm_joints) - J_dagger @ J
 
         tau_n_opt = null_space_projector @ dq_opt
+        
+        return tau_n_opt
 
 
     def W_torque_optimization(self, q, K, o_T_eef):
@@ -646,6 +661,8 @@ class FACTRTeleop(Node, ABC):
         torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
 
         if self.enable_torque_optimization:
+            eef_external_torque = self.get_follower_eef_external_wrench()
+            o_T_eef = self.get_follower_o_T_eef()
             torque_arm += self.null_space_torque_optimization(leader_arm_pos, eef_external_torque, o_T_eef)
 
         if self.enable_gravity_comp:
@@ -692,6 +709,42 @@ class FACTRTeleop(Node, ABC):
         Returns:
             np.ndarray: A NumPy array of shape (num_arm_joints,) containing the external
             joint torques.
+
+        Raises:
+            NotImplementedError: If the method is not implemented in a subclass.
+        """
+        pass
+
+    @abstractmethod
+    def get_follower_eef_external_wrench(self):
+        """
+        This method should retrieve the current external force-moment wrench acting on
+        the follower arm's end-effector, expressed in the follower's base frame. This is
+        used by `null_space_torque_optimization` (Eq. 5/6 in the paper) to build the
+        force-moment perturbation matrix K. This method is called at every iteration of
+        the control loop if self.enable_torque_optimization is set to True.
+
+        Returns:
+            np.ndarray: A NumPy array of shape (6,), [Fx, Fy, Fz, Mx, My, Mz], in the
+            follower's base frame.
+
+        Raises:
+            NotImplementedError: If the method is not implemented in a subclass.
+        """
+        pass
+
+    @abstractmethod
+    def get_follower_o_T_eef(self):
+        """
+        This method should retrieve the current end-effector pose of the follower arm
+        expressed in the follower's base frame (O_T_EE). Used by
+        `null_space_torque_optimization`/`W_torque_optimization` to rotate the task
+        Jacobian into the same frame as the external wrench. This method is called at
+        every iteration of the control loop if self.enable_torque_optimization is set
+        to True.
+
+        Returns:
+            np.ndarray: A (4, 4) homogeneous transformation matrix.
 
         Raises:
             NotImplementedError: If the method is not implemented in a subclass.

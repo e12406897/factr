@@ -139,6 +139,8 @@ class FrankaRos2Follower(Node):
         self._state_pub = ZMQPublisher(zmq_addresses["joint_state_sub"])
         self._torque_pub = ZMQPublisher(zmq_addresses["joint_torque_sub"])
         self._raw_torque_pub = ZMQPublisher(zmq_addresses["raw_joint_torque_sub"])
+        self._eef_wrench_pub = ZMQPublisher(zmq_addresses["eef_wrench_sub"])
+        self._o_t_ee_pub = ZMQPublisher(zmq_addresses["o_t_ee_sub"])
 
         self._cmd_timer = self.create_timer(command_period_sec, self._forward_command)
 
@@ -205,6 +207,12 @@ class FrankaRos2Follower(Node):
         tau_ext = self.filter_tau_ext(tau_ext)
         self._torque_pub.send_message(tau_ext)
         self._raw_torque_pub.send_message(tau_ext)
+        # O_F_ext_hat_K / O_T_EE are already in the base frame ("O") as reported by
+        # libfranka -- no extra transform needed before forwarding them.
+        self._eef_wrench_pub.send_message(
+            np.array(msg.o_f_ext_hat_k, dtype=np.float64)
+        )
+        self._o_t_ee_pub.send_message(np.array(msg.o_t_ee, dtype=np.float64))
 
     def out_of_bounds(self) -> bool:
         if self.save_launch:

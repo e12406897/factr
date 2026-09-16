@@ -33,7 +33,11 @@ franka_right_real_zmq_addresses = {
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
-
+    # End-effector external wrench [Fx,Fy,Fz,Mx,My,Mz] and O_T_EE (4x4, flattened),
+    # both expressed in the follower's base frame -- used by the torque optimization
+    # (manipulator-redundancy) null-space term.
+    "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:3085",
+    "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:3084",
 }
 
 franka_left_real_zmq_addresses = {
@@ -41,6 +45,8 @@ franka_left_real_zmq_addresses = {
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
+    "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:5085",
+    "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:5084",
 }
 
 # Distinct port sets per side so both sim arms can run simultaneously later for a
@@ -51,7 +57,8 @@ franka_sim_right_zmq_addresses = {
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:3086",
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
-
+    "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:3085",
+    "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:3084",
 }
 
 franka_sim_left_zmq_addresses = {
@@ -59,4 +66,6 @@ franka_sim_left_zmq_addresses = {
     "joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5087",
     "raw_joint_torque_sub": f"tcp://{franka_bridge_loopback_ip}:5086",
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
+    "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:5085",
+    "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:5084",
 }

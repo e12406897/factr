@@ -52,6 +52,17 @@ controller:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
     kp:  0.1
     kd: 0.01
+  # Redundancy-based torque reduction (see null_space_torque_optimization /
+  # W_torque_optimization) -- disabled by default, start here before tuning:
+  # gain_null_external_forces scales the measured [Fx,Fy,Fz,Mx,My,Mz] into the
+  # force-moment perturbation matrix K (paper Eq. 5); torque_opt_gain is [force, moment]
+  # and corresponds to the gain G on the objective gradient (paper Eq. 7) -- keep small
+  # and increase gradually, since a large G causes large null-space motion (and, per the
+  # paper, more tracking error).
+  torque_optimization:
+    enable: False
+    gain_null_external_forces: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    torque_opt_gain: [1.0, 1.0]
   static_friction_comp:
     enable_speed: 2
     gain: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] 
