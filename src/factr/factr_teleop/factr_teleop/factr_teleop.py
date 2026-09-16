@@ -22,6 +22,7 @@ import time
 from abc import ABC, abstractmethod
 
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 import pinocchio as pin
 import yaml
 from python_utils.utils import get_workspace_root
@@ -538,6 +539,73 @@ class FACTRTeleop(Node, ABC):
         )
         return tau_n
 
+    def null_space_torque_optimization(self, arm_joint_pos, eef_external_torque, o_T_eef):
+        J = pin.computeJointJacobian(
+                    self.pin_model, self.pin_data, arm_joint_pos, self.num_arm_joints
+                )
+        
+        J_dagger = np.linalg.pinv(J)
+
+        K = np.diag(eef_external_torque)
+        K = np.diag(self.gain_null_external_forces*eef_external_torque)
+
+        if np.trace(K)>1e-6:
+            dW_force, dW_moment = self.grad_W_torque_optimization(arm_joint_pos, K, o_T_eef)
+        else:
+            dW_force, dW_moment = 0, 0
+
+        dq_opt = self.torque_opt_gain[0]*dW_force + self.torque_opt_gain[1]*dW_moment
+        null_space_projector = np.eye(self.num_arm_joints) - J_dagger @ J
+
+        tau_n_opt = null_space_projector @ dq_opt
+
+
+    def W_torque_optimization(self, q, K, o_T_eef):
+        # transform geometric Jacobian to analytical
+        J = pin.computeJointJacobian(
+            self.pin_model, self.pin_data, q, self.num_arm_joints
+        )
+
+        rot_mat = o_T_eef[0:3, 0:3]
+        r = R.from_matrix(rot_mat)
+        euler_angles = r.as_euler('zyx') 
+
+
+        T = np.array([
+            [0, -np.sin(euler_angles[0]),  np.cos(euler_angles[0]) * np.cos(euler_angles[1])],
+            [0,  np.cos(euler_angles[0]),  np.sin(euler_angles[0]) * np.cos(euler_angles[1])],
+            [1,  0,                        -np.sin(euler_angles[1])]
+        ]) # Matrix for transforming J_g <-> J_A
+
+        
+        J_A = np.vstack([
+            J[:3, :],
+            np.linalg.solve(T, J[3:, :])
+        ]) # solve linear system J = [E, O; O, T]@J_A
+
+        J_A_force = J_A[:3]
+        J_A_moment = J_A[3:]
+        
+        
+        # objective function as in eq. 6 separated for force and moment
+        term_1 = J_A_force@J_A_force.T / np.trace(J_A_force@J_A_force.T) - K[0:3, 0:3] / np.trace(K[0:3, 0:3])
+        W_force = np.sqrt(np.trace(term_1@term_1.T))
+
+        term_1 = J_A_moment@J_A_moment.T / np.trace(J_A_moment@J_A_moment.T) - K[3:, 3:] / np.trace(K[3:, 3:])
+        W_moment = np.sqrt(np.trace(term_1@term_1.T))
+
+        return W_force, W_moment
+
+    def grad_W_torque_optimization(self, q, K, o_T_eef, h=1e-6):
+        dW_froce = np.zeros(len(q))
+        dW_moment = np.zeros(len(q))
+
+        for i in range(len(q)):
+            dq = np.zeros(len(q)); dq[i]=h
+            dW_froce[i], dW_moment[i] = (self.W_torque_optimization(q + dq, K, o_T_eef) - self.W_torque_optimization(q - dq, K, o_T_eef)) / (2 * h)
+
+        return dW_froce, dW_moment
+
     def torque_feedback(self, external_torque, arm_joint_vel):
         """
         Computes joint torque for the leader arm to achieve force-feedback based on
@@ -576,6 +644,9 @@ class FACTRTeleop(Node, ABC):
         )
         torque_arm += torque_l
         torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
+
+        if self.enable_torque_optimization:
+            torque_arm += self.null_space_torque_optimization(leader_arm_pos, eef_external_torque, o_T_eef)
 
         if self.enable_gravity_comp:
             torque_arm += self.gravity_compensation(leader_arm_pos, leader_arm_vel)
