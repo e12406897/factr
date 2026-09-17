@@ -78,6 +78,15 @@ class Args:
     enable_wrist_cameras: bool = True
     wrist_camera_width: int = 256
     wrist_camera_height: int = 256
+    # Single window: scene view with the wrist views inset in the bottom corners
+    # (left arm bottom-left, right arm bottom-right) instead of three separate windows.
+    # Replaces the interactive MuJoCo viewer, so the scene camera is fixed.
+    composite_window: bool = False
+    # Scene camera for composite mode. robosuite envs also define agentview, birdview,
+    # sideview.
+    scene_camera: str = "frontview"
+    scene_width: int = 960
+    scene_height: int = 720
 
 
 def _read_gripper_actuation_range(config_file: str) -> float:
@@ -118,6 +127,10 @@ def main(args: Args) -> None:
         enable_wrist_cameras=args.enable_wrist_cameras,
         wrist_camera_width=args.wrist_camera_width,
         wrist_camera_height=args.wrist_camera_height,
+        composite_window=args.composite_window,
+        scene_camera=args.scene_camera,
+        scene_width=args.scene_width,
+        scene_height=args.scene_height,
     )
     follower.serve()
 

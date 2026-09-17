@@ -185,6 +185,14 @@ class RobosuiteFrankaFollower:
         enable_wrist_cameras: bool = False,
         wrist_camera_width: int = 256,
         wrist_camera_height: int = 256,
+        # Show everything in ONE window instead of three: the scene camera full size,
+        # with each arm's wrist view inset in the bottom corner on its own side.
+        # Replaces the interactive mjviewer window (has_renderer is forced off), so the
+        # scene view is fixed to `scene_camera` -- no mouse-draggable camera any more.
+        composite_window: bool = False,
+        scene_camera: str = "frontview",
+        scene_width: int = 960,
+        scene_height: int = 720,
     ):
         num_robots = len(zmq_addresses)
         assert num_robots in (1, 2), "RobosuiteFrankaFollower supports 1 or 2 robots."
@@ -194,7 +202,10 @@ class RobosuiteFrankaFollower:
 
         self._num_robots = num_robots
         self._num_arm_joints = num_arm_joints
-        self._has_renderer = has_renderer
+        self._composite_window = composite_window and enable_wrist_cameras
+        # Two GL contexts (mjviewer + our own Renderer) are unnecessary once everything
+        # is drawn into the composite window, so drop the interactive viewer there.
+        self._has_renderer = has_renderer and not self._composite_window
         self._control_period_sec = 1.0 / control_freq
         self._gripper_actuation_range = list(gripper_actuation_range)
         self._enable_var_scale_feedback = enable_var_scale_feedback
@@ -232,7 +243,7 @@ class RobosuiteFrankaFollower:
             robots=["Panda"] * num_robots,
             controller_configs=controller_configs,
             gripper_types="default",
-            has_renderer=has_renderer,
+            has_renderer=self._has_renderer,
             renderer="mjviewer",
             render_camera=None,
             # The wrist cameras are rendered by our own mujoco.Renderer (see
@@ -336,23 +347,49 @@ class RobosuiteFrankaFollower:
 
         self._enable_wrist_cameras = enable_wrist_cameras
         if enable_wrist_cameras:
-            self._setup_wrist_cameras(
-                num_robots, wrist_camera_width, wrist_camera_height
+            self._setup_cameras(
+                num_robots,
+                wrist_camera_width,
+                wrist_camera_height,
+                scene_camera,
+                scene_width,
+                scene_height,
             )
 
-    def _setup_wrist_cameras(self, num_robots: int, width: int, height: int) -> None:
+    def _setup_cameras(
+        self,
+        num_robots: int,
+        wrist_width: int,
+        wrist_height: int,
+        scene_camera: str,
+        scene_width: int,
+        scene_height: int,
+    ) -> None:
         """Own `mujoco.Renderer` against the raw MuJoCo model/data underlying robosuite,
-        bypassing robosuite's render wrapper. The camera is robosuite's built-in
+        bypassing robosuite's render wrapper. The wrist camera is robosuite's built-in
         `eye_in_hand` (defined in the Panda robot XML at the `right_hand` body, pointing
-        out from the eef), prefixed per robot index."""
+        out from the eef), prefixed per robot index.
+
+        A single Renderer is used for every camera -- each instance would create its own
+        GL context, and more than one context in this process is exactly what caused the
+        earlier segfaults/garbage frames. In composite mode it is sized for the scene
+        view and the wrist frames get scaled down to inset size afterwards."""
         self._wrist_camera_names = [
             f"robot{i}_eye_in_hand" for i in range(num_robots)
         ]
+        self._scene_camera = scene_camera
+        self._inset_size = (wrist_width, wrist_height)
+
+        width, height = (
+            (scene_width, scene_height)
+            if self._composite_window
+            else (wrist_width, wrist_height)
+        )
         model = self._env.sim.model._model
         # mujoco.Renderer refuses sizes larger than the model's offscreen framebuffer.
         model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
         model.vis.global_.offheight = max(model.vis.global_.offheight, height)
-        self._wrist_renderer = mujoco.Renderer(model, height=height, width=width)
+        self._renderer = mujoco.Renderer(model, height=height, width=width)
 
     def set_gripper_command(self, side: int, leader_gripper_pos: float) -> None:
         """`side`: index into `names`/`zmq_addresses` as passed to `__init__`. Called
@@ -412,17 +449,47 @@ class RobosuiteFrankaFollower:
         o_T_eef = robot.pose_in_base_from_name(name)
         return wrench, o_T_eef
 
+    def _render_camera(self, camera: str) -> np.ndarray:
+        """BGR frame for cv2. mujoco.Renderer already returns top-down RGB (unlike
+        robosuite's camera observations, which are bottom-up), so only the channel swap
+        is needed."""
+        self._renderer.update_scene(self._env.sim.data._data, camera=camera)
+        return self._renderer.render()[:, :, ::-1]
+
     def _show_wrist_cameras(self) -> None:
-        """One OpenCV window per arm showing the `eye_in_hand` wrist camera, rendered
-        via mujoco.Renderer. Unlike robosuite's camera observations, Renderer already
-        returns top-down RGB, so only the RGB->BGR swap for cv2 is needed."""
+        """Either one window per arm, or -- in composite mode -- a single window with
+        the scene view and each arm's wrist view inset in the bottom corner on its own
+        side (index 0 left, index 1 right, matching `names`)."""
         import cv2
 
-        data = self._env.sim.data._data
+        if not self._composite_window:
+            for side, cam_name in enumerate(self._wrist_camera_names):
+                cv2.imshow(f"{self._names[side]} wrist", self._render_camera(cam_name))
+            cv2.waitKey(1)
+            return
+
+        frame = self._render_camera(self._scene_camera).copy()
+        height, width = frame.shape[:2]
+        inset_w, inset_h = self._inset_size
+        margin = 10
         for side, cam_name in enumerate(self._wrist_camera_names):
-            self._wrist_renderer.update_scene(data, camera=cam_name)
-            rgb = self._wrist_renderer.render()
-            cv2.imshow(f"{self._names[side]} wrist", rgb[:, :, ::-1])
+            inset = cv2.resize(self._render_camera(cam_name), (inset_w, inset_h))
+            y0 = height - inset_h - margin
+            x0 = margin if side == 0 else width - inset_w - margin
+            frame[y0 : y0 + inset_h, x0 : x0 + inset_w] = inset
+            cv2.rectangle(
+                frame, (x0 - 1, y0 - 1), (x0 + inset_w, y0 + inset_h), (255, 255, 255), 1
+            )
+            cv2.putText(
+                frame,
+                self._names[side],
+                (x0 + 5, y0 + 18),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
+            )
+        cv2.imshow("factr robosuite", frame)
         cv2.waitKey(1)
 
     def _filter_torque(self, side: int, curr_ext_torque: np.ndarray) -> np.ndarray:
