@@ -32,6 +32,13 @@
         "DISPLAY=${env:DISPLAY}",
         "-e",
         "QT_X11_NO_MITSHM=1",
+        // The nvcr.io CUDA base image defaults to NVIDIA_DRIVER_CAPABILITIES=compute,utility,
+        // so the NVIDIA runtime never mounts libEGL_nvidia/libGLX_nvidia into the container.
+        // EGL then falls back to Mesa, which lacks EGL_EXT_platform_device and fails with
+        // "Cannot initialize a EGL device display" -- breaking robosuite's offscreen camera
+        // rendering. Requesting graphics capabilities injects the GL/EGL driver libraries.
+        "-e",
+        "NVIDIA_DRIVER_CAPABILITIES=all",
         "--network=host",
         "--cap-add=SYS_NICE",
         "--ulimit=rtprio=99",

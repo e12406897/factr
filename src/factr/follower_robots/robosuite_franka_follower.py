@@ -463,6 +463,18 @@ class RobosuiteFrankaFollower:
             step_start = time.time()
 
             action = self._build_action()
+            if self._enable_wrist_cameras:
+                # The camera images are rendered inside step(). With a window-backed GL
+                # context (MUJOCO_GL=glx/glfw) the active read buffer gets switched back
+                # on every buffer swap, so mjr_readPixels() ends up reading the PREVIOUS
+                # frame -- which shows up as both windows displaying the same image,
+                # alternating between the two cameras. Re-bind the offscreen buffer each
+                # tick so reads come from what was just rendered.
+                ctx = getattr(self._env.sim, "_render_context_offscreen", None)
+                if ctx is not None:
+                    mujoco.mjr_setBuffer(
+                        mujoco.mjtFramebuffer.mjFB_OFFSCREEN, ctx.con
+                    )
             obs = self._env.step(action)[0]
             if self._has_renderer:
                 self._env.render()
