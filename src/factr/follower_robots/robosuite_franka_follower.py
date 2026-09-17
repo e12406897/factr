@@ -182,6 +182,14 @@ class RobosuiteFrankaFollower:
         var_scale_factor: float = 1.0,
         enable_metrics: bool = True,
         metrics_window_size: int = 100,
+        # Extra wrist-camera window per arm, showing the gripper fingers / what is being
+        # grasped. Uses robosuite's built-in `eye_in_hand` camera (defined in the Panda
+        # robot XML at the `right_hand` body, pointing out from the eef), so nothing
+        # needs to be added to the model. Requires the offscreen renderer, which is
+        # switched on automatically below when this is enabled.
+        enable_wrist_cameras: bool = False,
+        wrist_camera_width: int = 256,
+        wrist_camera_height: int = 256,
     ):
         num_robots = len(zmq_addresses)
         assert num_robots in (1, 2), "RobosuiteFrankaFollower supports 1 or 2 robots."
@@ -232,7 +240,9 @@ class RobosuiteFrankaFollower:
             has_renderer=has_renderer,
             renderer="mjviewer",
             render_camera=None,
-            has_offscreen_renderer=False,
+            # sim.render() (used for the wrist cameras) asserts an offscreen render
+            # context exists, which robosuite only creates when this is True.
+            has_offscreen_renderer=enable_wrist_cameras,
             use_camera_obs=False,
             control_freq=control_freq,
             ignore_done=True,
@@ -322,6 +332,14 @@ class RobosuiteFrankaFollower:
             else None
         )
 
+        self._enable_wrist_cameras = enable_wrist_cameras
+        self._wrist_camera_size = (wrist_camera_width, wrist_camera_height)
+        if enable_wrist_cameras:
+            # robosuite prefixes model-defined camera names per robot index.
+            self._wrist_camera_names = [
+                f"robot{i}_eye_in_hand" for i in range(num_robots)
+            ]
+
     def set_gripper_command(self, side: int, leader_gripper_pos: float) -> None:
         """`side`: index into `names`/`zmq_addresses` as passed to `__init__`. Called
         by the ROS gripper-command subscriber."""
@@ -380,6 +398,20 @@ class RobosuiteFrankaFollower:
         o_T_eef = robot.pose_in_base_from_name(name)
         return wrench, o_T_eef
 
+    def _show_wrist_cameras(self) -> None:
+        """One OpenCV window per arm showing robosuite's built-in `eye_in_hand` wrist
+        camera. MuJoCo returns images bottom-up and in RGB, so flip vertically and
+        convert to BGR for cv2."""
+        import cv2
+
+        width, height = self._wrist_camera_size
+        for side, cam_name in enumerate(self._wrist_camera_names):
+            rgb = self._env.sim.render(
+                width=width, height=height, camera_name=cam_name
+            )
+            cv2.imshow(f"{self._names[side]} wrist", rgb[::-1, :, ::-1])
+        cv2.waitKey(1)
+
     def _filter_torque(self, side: int, curr_ext_torque: np.ndarray) -> np.ndarray:
         """Adaptive smoothing identical to `MujocoFrankaFollower._get_arm_external_torque`:
         tracks rising edges (contact onset) almost immediately via a `tanh`-scaled
@@ -427,6 +459,8 @@ class RobosuiteFrankaFollower:
             self._env.step(action)
             if self._has_renderer:
                 self._env.render()
+            if self._enable_wrist_cameras:
+                self._show_wrist_cameras()
 
             for side in range(self._num_robots):
                 q = self._env.sim.data.qpos[self._qpos_idx[side]].copy()

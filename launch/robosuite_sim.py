@@ -71,6 +71,12 @@ class Args:
     # PlotJuggler (`ros2 run plotjuggler plotjuggler`), on `/factr/<side>/metrics/*`.
     enable_metrics: bool = True
     metrics_window_size: int = 100
+    # One extra OpenCV window per arm with robosuite's built-in `eye_in_hand` wrist
+    # camera (shows the gripper fingers / what is being grasped). Needs the offscreen
+    # renderer, which is enabled automatically when this is on.
+    enable_wrist_cameras: bool = False
+    wrist_camera_width: int = 256
+    wrist_camera_height: int = 256
 
 
 def _read_gripper_actuation_range(config_file: str) -> float:
@@ -107,6 +113,9 @@ def main(args: Args) -> None:
         var_scale_factor=args.var_scale_factor,
         enable_metrics=args.enable_metrics,
         metrics_window_size=args.metrics_window_size,
+        enable_wrist_cameras=args.enable_wrist_cameras,
+        wrist_camera_width=args.wrist_camera_width,
+        wrist_camera_height=args.wrist_camera_height,
     )
     follower.serve()
 
