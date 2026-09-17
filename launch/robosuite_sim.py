@@ -66,7 +66,11 @@ class Args:
     enable_ros_gripper: bool = True
     # Same adaptive external-torque smoothing as mujoco_sim.py (defaults matched to it).
     enable_var_scale_feedback: bool = True
-    var_scale_factor: float = 10.0
+    var_scale_factor: float = 1.0
+    # Publishes rolling torque/external-force ratio for live plotting, e.g. in
+    # PlotJuggler (`ros2 run plotjuggler plotjuggler`), on `/factr/<side>/metrics/*`.
+    enable_metrics: bool = True
+    metrics_window_size: int = 100
 
 
 def _read_gripper_actuation_range(config_file: str) -> float:
@@ -101,6 +105,8 @@ def main(args: Args) -> None:
         damping_ratio=args.damping_ratio,
         enable_var_scale_feedback=args.enable_var_scale_feedback,
         var_scale_factor=args.var_scale_factor,
+        enable_metrics=args.enable_metrics,
+        metrics_window_size=args.metrics_window_size,
     )
     follower.serve()
 

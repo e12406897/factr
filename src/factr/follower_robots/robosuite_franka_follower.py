@@ -1,5 +1,6 @@
 import threading
 import time
+from collections import deque
 from typing import Dict, List, Optional
 
 import mujoco
@@ -39,6 +40,64 @@ class _GripperROSBridge:
             target=rclpy.spin, args=(self._node,), daemon=True
         )
         self._thread.start()
+
+
+class _MetricsPublisher:
+    """Publishes live torque/external-force metrics for external plotting (e.g.
+    PlotJuggler: `ros2 run plotjuggler plotjuggler`, then drag in the topics below),
+    completely decoupled from the control loop -- this node only publishes, and
+    publishing in rclpy doesn't require spinning (only receiving callbacks does), so
+    unlike `_GripperROSBridge` it needs no spin thread.
+
+    Publishes, per side, on `/factr/{name}/metrics/*`:
+      - `applied_torque_sum`: sum(|applied joint torque|) over a rolling window
+      - `external_wrench_sum`: sum(|external eef wrench|) over the same window
+      - `torque_force_ratio`: their ratio -- see RobosuiteFrankaFollower's docstring
+        for why this is a rolling-window ratio-of-sums rather than a per-step ratio
+        (per-step blows up whenever the external force momentarily passes through ~0).
+    """
+
+    def __init__(self, names: List[str], window_size: int = 100):
+        import rclpy
+        from rclpy.node import Node
+        from std_msgs.msg import Float64
+
+        if not rclpy.ok():
+            rclpy.init()
+        self._Float64 = Float64
+        self._node = Node("robosuite_torque_force_metrics")
+        self._torque_hist = {name: deque(maxlen=window_size) for name in names}
+        self._wrench_hist = {name: deque(maxlen=window_size) for name in names}
+        self._pubs = {
+            name: {
+                "applied_torque_norm": self._node.create_publisher(
+                    Float64, f"/factr/{name}/metrics/applied_torque_sum", 10
+                ),
+                "external_wrench_norm": self._node.create_publisher(
+                    Float64, f"/factr/{name}/metrics/external_wrench_sum", 10
+                ),
+                "torque_force_ratio": self._node.create_publisher(
+                    Float64, f"/factr/{name}/metrics/torque_force_ratio", 10
+                ),
+            }
+            for name in names
+        }
+
+    def update(
+        self, name: str, applied_torque: np.ndarray, external_wrench: np.ndarray
+    ) -> None:
+        self._torque_hist[name].append(float(np.linalg.norm(applied_torque)))
+        self._wrench_hist[name].append(float(np.linalg.norm(external_wrench)))
+
+        torque_norm = np.sqrt(self._torque_hist[name].T@self._torque_hist[name])
+        wrench_norm = np.sqrt(self._wrench_hist[name].T@self._wrench_hist[name])
+        
+        ratio = torque_norm / (wrench_norm + 1e-6)
+
+        pubs = self._pubs[name]
+        pubs["applied_torque_norm"].publish(self._Float64(data=torque_norm))
+        pubs["external_wrench_norm"].publish(self._Float64(data=wrench_norm))
+        pubs["torque_force_ratio"].publish(self._Float64(data=ratio))
 
 
 class RobosuiteFrankaFollower:
@@ -119,11 +178,14 @@ class RobosuiteFrankaFollower:
         damping_ratio: float = 1.0,
         enable_var_scale_feedback: bool = False,
         var_scale_factor: float = 1.0,
+        enable_metrics: bool = True,
+        metrics_window_size: int = 100,
     ):
         num_robots = len(zmq_addresses)
         assert num_robots in (1, 2), "RobosuiteFrankaFollower supports 1 or 2 robots."
         assert len(gripper_actuation_range) == num_robots
         assert len(names) == num_robots
+        self._names = list(names)
 
         self._num_robots = num_robots
         self._num_arm_joints = num_arm_joints
@@ -252,6 +314,11 @@ class RobosuiteFrankaFollower:
         self._gripper_bridge = (
             _GripperROSBridge(self, names) if enable_ros_gripper else None
         )
+        self._metrics_pub = (
+            _MetricsPublisher(names, window_size=metrics_window_size)
+            if enable_metrics
+            else None
+        )
 
     def set_gripper_command(self, side: int, leader_gripper_pos: float) -> None:
         """`side`: index into `names`/`zmq_addresses` as passed to `__init__`. Called
@@ -283,20 +350,32 @@ class RobosuiteFrankaFollower:
         expressed in robot `side`'s own base frame -- matches `FrankaRobotState`'s
         `o_f_ext_hat_k`/`o_t_ee` on the real robot.
 
-        `ee_force`/`ee_torque` are read from robosuite's own eef force/torque sensor
-        (world frame) and rotated into the base frame via `base_ori`. NOTE: this
-        assumes the default Panda model actually carries a force/torque sensor at the
-        eef site -- verify empirically (e.g. press the gripper against the table and
-        confirm nonzero readings) before trusting the magnitude/direction.
+        Deliberately NOT `robot.ee_force`/`ee_torque`: those read raw MuJoCo sensordata
+        (robosuite's `MjSim.get_sensor()` returns `self.sensordata[sid]` verbatim) with
+        no gravity/dynamics compensation, so they include the effector's own weight and
+        whatever static holding effort the controller applies -- nonzero even with the
+        gripper hovering over nothing. The real robot's `O_F_ext_hat_K` is libfranka's
+        model-based estimate, already isolated from the robot's own dynamics; the
+        equivalent in sim is this class's own contact-only-filtered joint torque
+        (`_get_contact_torque`, already used for the joint-torque-feedback channel).
+        We map that to a Cartesian wrench the same way the paper does (Eq. 10): a
+        Jacobian pseudoinverse from joint torque to end-effector wrench, tau = J^T @ F
+        => F = pinv(J^T) @ tau.
         """
         robot = self._env.robots[side]
-        # "right" is the arm key (matches controller_configs["body_parts"]["right"]
-        # above), not the eef body/site name used below for pose_in_base_from_name.
-        force_world = np.asarray(robot.ee_force["right"])
-        torque_world = np.asarray(robot.ee_torque["right"])
+        name = self._eef_name[side]
+        dof_idx = self._dof_idx[side]
+        tau_ext = self._get_contact_torque(dof_idx)  # contact-only, gravity excluded
+        jacp = robot.sim.data.get_body_jacp(name)[:, dof_idx]  # (3, 7), world frame
+        jacr = robot.sim.data.get_body_jacr(name)[:, dof_idx]  # (3, 7), world frame
+        J = np.vstack([jacp, jacr])  # (6, 7)
+        # np.linalg.pinv(J.T) equals (J @ J.T)^-1 @ J if J has full row rank
+        wrench_world = np.linalg.pinv(J.T) @ tau_ext
         base_ori = robot.base_ori  # world-frame rotation matrix of the base
-        wrench = np.concatenate([base_ori.T @ force_world, base_ori.T @ torque_world])
-        o_T_eef = robot.pose_in_base_from_name(self._eef_name[side])
+        wrench = np.concatenate(
+            [base_ori.T @ wrench_world[:3], base_ori.T @ wrench_world[3:]]
+        )
+        o_T_eef = robot.pose_in_base_from_name(name)
         return wrench, o_T_eef
 
     def _filter_torque(self, side: int, curr_ext_torque: np.ndarray) -> np.ndarray:
@@ -358,6 +437,14 @@ class RobosuiteFrankaFollower:
                 wrench, o_T_eef = self._get_eef_wrench_and_pose(side)
                 self._eef_wrench_pub[side].send_message(wrench)
                 self._o_t_ee_pub[side].send_message(o_T_eef.flatten(order="F"))
+
+                if self._metrics_pub is not None:
+                    if np.linalg.norm(wrench) > 1e-6:
+                        applied_torque = self._env.sim.data.qfrc_actuator[
+                            self._dof_idx[side]
+                        ]
+                        self._metrics_pub.update(self._names[side], applied_torque, wrench)
+    
 
             elapsed = time.time() - step_start
             if elapsed < self._control_period_sec:
