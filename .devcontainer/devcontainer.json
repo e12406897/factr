@@ -35,7 +35,16 @@
         "--network=host",
         "--cap-add=SYS_NICE",
         "--ulimit=rtprio=99",
-        "--ulimit=memlock=-1"
+        "--ulimit=memlock=-1",
+        // Host GIDs of /dev/dri/card0 (44, "video") and /dev/dri/renderD128 (109,
+        // "render"). Without these the container user can't open the GPU device nodes,
+        // so headless/offscreen rendering (EGL -- used by robosuite's camera
+        // observations) fails with "Permission denied" while the on-screen viewer still
+        // works (that one goes through the host's X server). --privileged does NOT
+        // cover this: it grants capabilities, not file ownership/permission bits.
+        // Re-check with `ls -ln /dev/dri/` on the host if the GIDs ever change.
+        "--group-add", "44",
+        "--group-add", "109"
     ],
 
     "mounts": [
