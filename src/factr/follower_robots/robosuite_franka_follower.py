@@ -235,13 +235,21 @@ class RobosuiteFrankaFollower:
             has_renderer=has_renderer,
             renderer="mjviewer",
             render_camera=None,
-            # sim.render() (used for the wrist cameras) asserts an offscreen render
-            # context exists, which robosuite only creates when this is True.
+            # The wrist cameras go through robosuite's own camera-observation path
+            # (rendered inside step()), NOT a manual sim.render() -- calling that
+            # ourselves while the on-screen mjviewer holds the GL context reads from a
+            # framebuffer nothing was rendered into, which shows up as garbage pixels.
             has_offscreen_renderer=enable_wrist_cameras,
-            use_camera_obs=False,
+            use_camera_obs=enable_wrist_cameras,
             control_freq=control_freq,
             ignore_done=True,
         )
+        if enable_wrist_cameras:
+            # robosuite prefixes model-defined camera names per robot index.
+            wrist_camera_names = [f"robot{i}_eye_in_hand" for i in range(num_robots)]
+            make_kwargs["camera_names"] = wrist_camera_names
+            make_kwargs["camera_widths"] = wrist_camera_width
+            make_kwargs["camera_heights"] = wrist_camera_height
         if num_robots == 2:
             # env_configuration (e.g. "opposed"/"parallel") is a TwoArmEnv-only kwarg --
             # single-arm envs like Lift don't accept it at all.
@@ -397,17 +405,17 @@ class RobosuiteFrankaFollower:
         o_T_eef = robot.pose_in_base_from_name(name)
         return wrench, o_T_eef
 
-    def _show_wrist_cameras(self) -> None:
+    def _show_wrist_cameras(self, obs: dict) -> None:
         """One OpenCV window per arm showing robosuite's built-in `eye_in_hand` wrist
-        camera. MuJoCo returns images bottom-up and in RGB, so flip vertically and
-        convert to BGR for cv2."""
+        camera. Images come from robosuite's own camera observations (rendered inside
+        step()) as `<camera_name>_image`; with the default `IMAGE_CONVENTION="opengl"`
+        macro they are bottom-up RGB, so flip vertically and convert to BGR for cv2."""
         import cv2
 
-        width, height = self._wrist_camera_size
         for side, cam_name in enumerate(self._wrist_camera_names):
-            rgb = self._env.sim.render(
-                width=width, height=height, camera_name=cam_name
-            )
+            rgb = obs.get(f"{cam_name}_image")
+            if rgb is None:
+                continue
             cv2.imshow(f"{self._names[side]} wrist", rgb[::-1, :, ::-1])
         cv2.waitKey(1)
 
@@ -455,11 +463,11 @@ class RobosuiteFrankaFollower:
             step_start = time.time()
 
             action = self._build_action()
-            self._env.step(action)
+            obs = self._env.step(action)[0]
             if self._has_renderer:
                 self._env.render()
             if self._enable_wrist_cameras:
-                self._show_wrist_cameras()
+                self._show_wrist_cameras(obs)
 
             for side in range(self._num_robots):
                 q = self._env.sim.data.qpos[self._qpos_idx[side]].copy()
