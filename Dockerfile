@@ -131,6 +131,14 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
+# EGL vendor (ICD) registration for the NVIDIA driver
+# ============================================================
+
+RUN mkdir -p /usr/share/glvnd/egl_vendor.d && \
+    printf '{\n    "file_format_version" : "1.0.0",\n    "ICD" : {\n        "library_path" : "libEGL_nvidia.so.0"\n    }\n}\n' \
+        > /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+
+# ============================================================
 # Python dependencies
 #
 # requirements.txt is copied separately so that Docker can
