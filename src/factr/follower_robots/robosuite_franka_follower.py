@@ -89,9 +89,11 @@ class _MetricsPublisher:
         self._torque_hist[name].append(float(np.linalg.norm(applied_torque)))
         self._wrench_hist[name].append(float(np.linalg.norm(external_wrench)))
 
-        torque_norm = np.sqrt(self._torque_hist[name].T@self._torque_hist[name])
-        wrench_norm = np.sqrt(self._wrench_hist[name].T@self._wrench_hist[name])
-        
+        # deque -> array first: a deque has no .T / matmul. np.linalg.norm is the same
+        # sqrt(v.T @ v) over the rolling window.
+        torque_norm = float(np.linalg.norm(np.asarray(self._torque_hist[name])))
+        wrench_norm = float(np.linalg.norm(np.asarray(self._wrench_hist[name])))
+
         ratio = torque_norm / (wrench_norm + 1e-6)
 
         pubs = self._pubs[name]
