@@ -183,8 +183,8 @@ class RobosuiteFrankaFollower:
         enable_metrics: bool = True,
         metrics_window_size: int = 100,
         enable_wrist_cameras: bool = False,
-        wrist_camera_width: int = 256,
-        wrist_camera_height: int = 256,
+        wrist_camera_width: int = 512,
+        wrist_camera_height: int = 512,
     ):
         num_robots = len(zmq_addresses)
         assert num_robots in (1, 2), "RobosuiteFrankaFollower supports 1 or 2 robots."

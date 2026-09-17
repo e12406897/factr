@@ -76,8 +76,8 @@ class Args:
     # camera (shows the gripper fingers / what is being grasped). Needs the offscreen
     # renderer, which is enabled automatically when this is on.
     enable_wrist_cameras: bool = True
-    wrist_camera_width: int = 256
-    wrist_camera_height: int = 256
+    wrist_camera_width: int = 512
+    wrist_camera_height: int = 512
 
 
 def _read_gripper_actuation_range(config_file: str) -> float:
