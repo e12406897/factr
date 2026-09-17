@@ -67,6 +67,7 @@ class Args:
     # Same adaptive external-torque smoothing as mujoco_sim.py (defaults matched to it).
     enable_var_scale_feedback: bool = True
     var_scale_factor: float = 1.0
+    ema_beta: float = 0.999
     # Publishes rolling torque/external-force ratio for live plotting, e.g. in
     # PlotJuggler (`ros2 run plotjuggler plotjuggler`), on `/factr/<side>/metrics/*`.
     enable_metrics: bool = True
@@ -74,7 +75,7 @@ class Args:
     # One extra OpenCV window per arm with robosuite's built-in `eye_in_hand` wrist
     # camera (shows the gripper fingers / what is being grasped). Needs the offscreen
     # renderer, which is enabled automatically when this is on.
-    enable_wrist_cameras: bool = False
+    enable_wrist_cameras: bool = True
     wrist_camera_width: int = 256
     wrist_camera_height: int = 256
 
@@ -111,6 +112,7 @@ def main(args: Args) -> None:
         damping_ratio=args.damping_ratio,
         enable_var_scale_feedback=args.enable_var_scale_feedback,
         var_scale_factor=args.var_scale_factor,
+        ema_beta=args.ema_beta,
         enable_metrics=args.enable_metrics,
         metrics_window_size=args.metrics_window_size,
         enable_wrist_cameras=args.enable_wrist_cameras,

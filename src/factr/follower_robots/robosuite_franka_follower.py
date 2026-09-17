@@ -86,19 +86,18 @@ class _MetricsPublisher:
     def update(
         self, name: str, applied_torque: np.ndarray, external_wrench: np.ndarray
     ) -> None:
+        
         self._torque_hist[name].append(float(np.linalg.norm(applied_torque)))
         self._wrench_hist[name].append(float(np.linalg.norm(external_wrench)))
 
-        # deque -> array first: a deque has no .T / matmul. np.linalg.norm is the same
-        # sqrt(v.T @ v) over the rolling window.
-        torque_norm = float(np.linalg.norm(np.asarray(self._torque_hist[name])))
-        wrench_norm = float(np.linalg.norm(np.asarray(self._wrench_hist[name])))
-
-        ratio = torque_norm / (wrench_norm + 1e-6)
+        if self._wrench_hist[name][-1] > 1e-6:
+            ratio = self._torque_hist[name][-1] / (self._wrench_hist[name][-1] + 1e-6)
+        else: 
+            ratio = 0.0
 
         pubs = self._pubs[name]
-        pubs["applied_torque_norm"].publish(self._Float64(data=torque_norm))
-        pubs["external_wrench_norm"].publish(self._Float64(data=wrench_norm))
+        pubs["applied_torque_norm"].publish(self._Float64(data=self._torque_hist[name][-1]))
+        pubs["external_wrench_norm"].publish(self._Float64(data=self._wrench_hist[name][-1]))
         pubs["torque_force_ratio"].publish(self._Float64(data=ratio))
 
 
@@ -180,13 +179,9 @@ class RobosuiteFrankaFollower:
         damping_ratio: float = 1.0,
         enable_var_scale_feedback: bool = False,
         var_scale_factor: float = 1.0,
+        ema_beta: float = 0.8, 
         enable_metrics: bool = True,
         metrics_window_size: int = 100,
-        # Extra wrist-camera window per arm, showing the gripper fingers / what is being
-        # grasped. Uses robosuite's built-in `eye_in_hand` camera (defined in the Panda
-        # robot XML at the `right_hand` body, pointing out from the eef), so nothing
-        # needs to be added to the model. Requires the offscreen renderer, which is
-        # switched on automatically below when this is enabled.
         enable_wrist_cameras: bool = False,
         wrist_camera_width: int = 256,
         wrist_camera_height: int = 256,
@@ -331,6 +326,10 @@ class RobosuiteFrankaFollower:
             if enable_metrics
             else None
         )
+        self._wrench_ema = [np.zeros(6) for _ in range(num_robots)]
+        self.ema_beta = ema_beta
+
+        
 
         self._enable_wrist_cameras = enable_wrist_cameras
         self._wrist_camera_size = (wrist_camera_width, wrist_camera_height)
@@ -471,15 +470,16 @@ class RobosuiteFrankaFollower:
                 self._raw_torque_pub[side].send_message(raw_tau)
 
                 wrench, o_T_eef = self._get_eef_wrench_and_pose(side)
+                self._wrench_ema[side] = self.ema_beta * self._wrench_ema[side] + (1 - self.ema_beta) * wrench
                 self._eef_wrench_pub[side].send_message(wrench)
                 self._o_t_ee_pub[side].send_message(o_T_eef.flatten(order="F"))
 
                 if self._metrics_pub is not None:
-                    if np.linalg.norm(wrench) > 1e-6:
-                        applied_torque = self._env.sim.data.qfrc_actuator[
-                            self._dof_idx[side]
-                        ]
-                        self._metrics_pub.update(self._names[side], applied_torque, wrench)
+                    applied_torque = self._env.sim.data.qfrc_actuator[
+                        self._dof_idx[side]
+                    ]
+                    self._metrics_pub.update(self._names[side], applied_torque, wrench)
+
     
 
             elapsed = time.time() - step_start

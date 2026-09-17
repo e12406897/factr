@@ -154,8 +154,8 @@ class FACTRTeleop(Node, ABC):
                 "null_space_joint_target"
             ]
         )
-        self.null_space_kp = self.config["controller"]["null_space_regulation"]["kp"]
-        self.null_space_kd = self.config["controller"]["null_space_regulation"]["kd"]
+        self.null_space_kp = np.array(self.config["controller"]["null_space_regulation"]["kp"])
+        self.null_space_kd = np.array(self.config["controller"]["null_space_regulation"]["kd"])
         # torque feedback
         self.enable_torque_feedback = self.config["controller"]["torque_feedback"][
             "enable"
@@ -559,13 +559,19 @@ class FACTRTeleop(Node, ABC):
         
         J_dagger = np.linalg.pinv(J)
 
-        K = np.diag(eef_external_torque)
-        K = np.diag(self.gain_null_external_forces*eef_external_torque)
+        
+        # K = np.diag(eef_external_torque)
+        K = np.diag(np.abs(self.gain_null_external_forces*eef_external_torque))
+
+        print(eef_external_torque)
 
         if np.trace(K)>1e-6:
+            print(True)
             dW_force, dW_moment = self.grad_W_torque_optimization(arm_joint_pos, K, o_T_eef)
         else:
-            dW_force, dW_moment = 0, 0
+            print(False)
+            dW_force = np.zeros(len(arm_joint_pos))
+            dW_moment = np.zeros(len(arm_joint_pos))
 
         dq_opt = self.torque_opt_gain[0]*dW_force + self.torque_opt_gain[1]*dW_moment
         null_space_projector = np.eye(self.num_arm_joints) - J_dagger @ J
@@ -617,7 +623,17 @@ class FACTRTeleop(Node, ABC):
 
         for i in range(len(q)):
             dq = np.zeros(len(q)); dq[i]=h
-            dW_froce[i], dW_moment[i] = (self.W_torque_optimization(q + dq, K, o_T_eef) - self.W_torque_optimization(q - dq, K, o_T_eef)) / (2 * h)
+            W_force_plus, W_moment_plus = self.W_torque_optimization(
+                q + dq, K, o_T_eef
+            )
+            W_force_minus, W_moment_minus = self.W_torque_optimization(
+                q - dq, K, o_T_eef
+            )
+
+            # print(self.W_torque_optimization(q, K, o_T_eef))
+
+            dW_froce[i] = (W_force_plus - W_force_minus) / (2 * h)
+            dW_moment[i] = (W_moment_plus - W_moment_minus) / (2 * h)
 
         return dW_froce, dW_moment
 

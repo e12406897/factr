@@ -79,6 +79,7 @@ RUN apt-get update && \
         ros-humble-ament-cmake-clang-tidy \
         ros-humble-ros2-control-test-assets \
         ros-humble-diff-drive-controller \
+        ros-humble-plotjuggler-ros \
         python3-requests \
         libpoco-dev \
         libgtest-dev \

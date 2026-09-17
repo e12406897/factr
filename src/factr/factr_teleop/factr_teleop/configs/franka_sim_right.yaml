@@ -42,7 +42,7 @@ controller:
   frequency: 500
   torque_feedback:
     enable: True
-    gain: [0.5, 0.5, 0.2, 0.5, 0.2, 0.2, 0.2]
+    gain: [0.8, 0.5, 0.4, 0.5, 0.4, 0.4, 0.2]
     damping: 0
     motor_scalar: [87, 87, 87, 87, 12, 12, 12] 
   gravity_comp:
@@ -50,12 +50,12 @@ controller:
     gain: [0.5, 0.18, 0.4, 0.18, 0.5, 0.5, 0.5] 
   null_space_regulation:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
-    kp:  0.1
-    kd: 0.01
+    kp:  [0.3, 0.12, 0.15, 0.12, 0.15, 0.15, 0.15]
+    kd: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
   torque_optimization:
-    enable: False
-    gain_null_external_forces: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    torque_opt_gain: [1.0, 1.0]
+    enable: True
+    gain_null_external_forces: [0.01, 0.01, 1.0, 0.01, 0.01, 0.01]
+    torque_opt_gain: [0.3, 0.1]
   static_friction_comp:
     enable_speed: 2
     gain: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] 
