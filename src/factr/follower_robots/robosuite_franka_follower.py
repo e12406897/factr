@@ -235,21 +235,16 @@ class RobosuiteFrankaFollower:
             has_renderer=has_renderer,
             renderer="mjviewer",
             render_camera=None,
-            # The wrist cameras go through robosuite's own camera-observation path
-            # (rendered inside step()), NOT a manual sim.render() -- calling that
-            # ourselves while the on-screen mjviewer holds the GL context reads from a
-            # framebuffer nothing was rendered into, which shows up as garbage pixels.
-            has_offscreen_renderer=enable_wrist_cameras,
-            use_camera_obs=enable_wrist_cameras,
+            # The wrist cameras are rendered by our own mujoco.Renderer (see
+            # _setup_wrist_cameras), NOT through robosuite's camera-observation path --
+            # robosuite's own offscreen context ends up reading the window framebuffer
+            # under a GLX/window-backed GL context (you literally get a picture of the
+            # desktop), so we bypass its render wrapper entirely.
+            has_offscreen_renderer=False,
+            use_camera_obs=False,
             control_freq=control_freq,
             ignore_done=True,
         )
-        if enable_wrist_cameras:
-            # robosuite prefixes model-defined camera names per robot index.
-            wrist_camera_names = [f"robot{i}_eye_in_hand" for i in range(num_robots)]
-            make_kwargs["camera_names"] = wrist_camera_names
-            make_kwargs["camera_widths"] = wrist_camera_width
-            make_kwargs["camera_heights"] = wrist_camera_height
         if num_robots == 2:
             # env_configuration (e.g. "opposed"/"parallel") is a TwoArmEnv-only kwarg --
             # single-arm envs like Lift don't accept it at all.
@@ -340,12 +335,24 @@ class RobosuiteFrankaFollower:
         
 
         self._enable_wrist_cameras = enable_wrist_cameras
-        self._wrist_camera_size = (wrist_camera_width, wrist_camera_height)
         if enable_wrist_cameras:
-            # robosuite prefixes model-defined camera names per robot index.
-            self._wrist_camera_names = [
-                f"robot{i}_eye_in_hand" for i in range(num_robots)
-            ]
+            self._setup_wrist_cameras(
+                num_robots, wrist_camera_width, wrist_camera_height
+            )
+
+    def _setup_wrist_cameras(self, num_robots: int, width: int, height: int) -> None:
+        """Own `mujoco.Renderer` against the raw MuJoCo model/data underlying robosuite,
+        bypassing robosuite's render wrapper. The camera is robosuite's built-in
+        `eye_in_hand` (defined in the Panda robot XML at the `right_hand` body, pointing
+        out from the eef), prefixed per robot index."""
+        self._wrist_camera_names = [
+            f"robot{i}_eye_in_hand" for i in range(num_robots)
+        ]
+        model = self._env.sim.model._model
+        # mujoco.Renderer refuses sizes larger than the model's offscreen framebuffer.
+        model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
+        model.vis.global_.offheight = max(model.vis.global_.offheight, height)
+        self._wrist_renderer = mujoco.Renderer(model, height=height, width=width)
 
     def set_gripper_command(self, side: int, leader_gripper_pos: float) -> None:
         """`side`: index into `names`/`zmq_addresses` as passed to `__init__`. Called
@@ -405,18 +412,17 @@ class RobosuiteFrankaFollower:
         o_T_eef = robot.pose_in_base_from_name(name)
         return wrench, o_T_eef
 
-    def _show_wrist_cameras(self, obs: dict) -> None:
-        """One OpenCV window per arm showing robosuite's built-in `eye_in_hand` wrist
-        camera. Images come from robosuite's own camera observations (rendered inside
-        step()) as `<camera_name>_image`; with the default `IMAGE_CONVENTION="opengl"`
-        macro they are bottom-up RGB, so flip vertically and convert to BGR for cv2."""
+    def _show_wrist_cameras(self) -> None:
+        """One OpenCV window per arm showing the `eye_in_hand` wrist camera, rendered
+        via mujoco.Renderer. Unlike robosuite's camera observations, Renderer already
+        returns top-down RGB, so only the RGB->BGR swap for cv2 is needed."""
         import cv2
 
+        data = self._env.sim.data._data
         for side, cam_name in enumerate(self._wrist_camera_names):
-            rgb = obs.get(f"{cam_name}_image")
-            if rgb is None:
-                continue
-            cv2.imshow(f"{self._names[side]} wrist", rgb[::-1, :, ::-1])
+            self._wrist_renderer.update_scene(data, camera=cam_name)
+            rgb = self._wrist_renderer.render()
+            cv2.imshow(f"{self._names[side]} wrist", rgb[:, :, ::-1])
         cv2.waitKey(1)
 
     def _filter_torque(self, side: int, curr_ext_torque: np.ndarray) -> np.ndarray:
@@ -463,23 +469,11 @@ class RobosuiteFrankaFollower:
             step_start = time.time()
 
             action = self._build_action()
-            if self._enable_wrist_cameras:
-                # The camera images are rendered inside step(). With a window-backed GL
-                # context (MUJOCO_GL=glx/glfw) the active read buffer gets switched back
-                # on every buffer swap, so mjr_readPixels() ends up reading the PREVIOUS
-                # frame -- which shows up as both windows displaying the same image,
-                # alternating between the two cameras. Re-bind the offscreen buffer each
-                # tick so reads come from what was just rendered.
-                ctx = getattr(self._env.sim, "_render_context_offscreen", None)
-                if ctx is not None:
-                    mujoco.mjr_setBuffer(
-                        mujoco.mjtFramebuffer.mjFB_OFFSCREEN, ctx.con
-                    )
-            obs = self._env.step(action)[0]
+            self._env.step(action)
             if self._has_renderer:
                 self._env.render()
             if self._enable_wrist_cameras:
-                self._show_wrist_cameras(obs)
+                self._show_wrist_cameras()
 
             for side in range(self._num_robots):
                 q = self._env.sim.data.qpos[self._qpos_idx[side]].copy()
