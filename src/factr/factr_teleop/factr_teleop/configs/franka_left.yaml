@@ -52,10 +52,14 @@ controller:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
     kp:  0.1
     kd: 0.01
-  torque_optimization:
+  null_space_torque_optimization:
     enable: False
-    gain_null_external_forces: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    torque_opt_gain: [1.0, 1.0]
+    weight_external_forces: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    gain: [1.0, 1.0]
+    damping: 0.2
+    avoid_limit_param_a: [10, 10, 10, 9, 4, 6.1, 3.7]
+    avoid_limit_param_b: [-28.9, -17.5, -28.9, -12.2, -11.55, -10, -10.35]
+    avoid_limit_gain: 0.5
   static_friction_comp:
     enable_speed: 2
     gain: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] 
