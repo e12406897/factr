@@ -203,6 +203,14 @@ class FACTRTeleop(Node, ABC):
         self.torque_opt_avoid_limit_gain = self.config["controller"]["null_space_torque_optimization"][
                 "avoid_limit_gain"
         ]
+        self.torque_opt_force_threshold = self.config["controller"][
+            "null_space_torque_optimization"
+        ].get("force_threshold", 1e-3)
+        self.torque_opt_regulation_delay = self.config["controller"][
+            "null_space_torque_optimization"
+        ].get("regulation_delay", 1.0)
+        # -inf: no contact yet at startup, so regulation is active from the start.
+        self._last_ext_force_time = -np.inf
 
 
         # gripper feedback
@@ -725,12 +733,16 @@ class FACTRTeleop(Node, ABC):
         if self.enable_torque_optimization:
             eef_external_torque = self.get_follower_eef_external_wrench()
             o_T_eef = self.get_follower_o_T_eef()
-            # norm, not np.prod: the product of 6 signed components is negative whenever an
-            # odd number of them is (e.g. a downward push) and 0 if any single one is 0.
-            if np.linalg.norm(eef_external_torque) > 1e-3:
-                torque_arm += self.null_space_torque_optimization(leader_arm_pos, leader_arm_vel, eef_external_torque, o_T_eef)
-            else:
+            now = time.monotonic()
+            
+            if np.linalg.norm(eef_external_torque) > self.torque_opt_force_threshold:
+                self._last_ext_force_time = now
+            
+            if now - self._last_ext_force_time > self.torque_opt_regulation_delay:
                 torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
+            else:
+                # run torque optimization if until there is no external end effector force detected within the regulation delay period.
+                torque_arm += self.null_space_torque_optimization(leader_arm_pos, leader_arm_vel, eef_external_torque, o_T_eef)
         else:
             torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
 

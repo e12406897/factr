@@ -54,6 +54,10 @@ controller:
     kd: 0.01
   null_space_torque_optimization:
     enable: True
+    #switch to nullspace regulation when external forces fall below the force_threshold for longer than the regulation_delay in s
+    force_threshold: 1e-3
+    regulation_delay: 1.0
+    #parameters for null space torque optimization
     weight_external_forces: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     gain: [0.5, 0.5]
     damping: 0.2
