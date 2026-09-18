@@ -67,7 +67,7 @@ class Args:
     # Same adaptive external-torque smoothing as mujoco_sim.py (defaults matched to it).
     enable_var_scale_feedback: bool = True
     var_scale_factor: float = 1.0
-    ema_beta: float = 0.999
+    ema_beta: float = 0.95
     # Publishes rolling torque/external-force ratio for live plotting, e.g. in
     # PlotJuggler (`ros2 run plotjuggler plotjuggler`), on `/factr/<side>/metrics/*`.
     enable_metrics: bool = True

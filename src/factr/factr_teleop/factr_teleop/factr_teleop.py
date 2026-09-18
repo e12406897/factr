@@ -169,19 +169,42 @@ class FACTRTeleop(Node, ABC):
         self.torque_feedback_damping = self.config["controller"]["torque_feedback"][
             "damping"
         ]
+
+
+
         # torque optimization (redundancy resolution via end-effector force/moment
         # perturbation, see null_space_torque_optimization/W_torque_optimization)
-        self.enable_torque_optimization = self.config["controller"][
-            "torque_optimization"
-        ]["enable"]
-        self.gain_null_external_forces = np.array(
-            self.config["controller"]["torque_optimization"][
-                "gain_null_external_forces"
+        self.enable_torque_optimization = self.config["controller"]["null_space_torque_optimization"][
+            "enable"
+        ]
+        self.torque_opt_weight_extF = np.array(
+            self.config["controller"]["null_space_torque_optimization"][
+                "weight_external_forces"
             ]
         )
         self.torque_opt_gain = np.array(
-            self.config["controller"]["torque_optimization"]["torque_opt_gain"]
+            self.config["controller"]["null_space_torque_optimization"][
+                "gain"
+        ]
         )
+        self.torque_opt_damping = self.config["controller"]["null_space_torque_optimization"][
+                "damping"
+        ]
+        self.torque_opt_limit_param_a = np.array(
+            self.config["controller"]["null_space_torque_optimization"][
+                "avoid_limit_param_a"
+        ]
+        )
+        self.torque_opt_limit_param_b = np.array(
+            self.config["controller"]["null_space_torque_optimization"][
+                "avoid_limit_param_b"
+        ]
+        )
+        self.torque_opt_avoid_limit_gain = self.config["controller"]["null_space_torque_optimization"][
+                "avoid_limit_gain"
+        ]
+
+
         # gripper feedback
         self.enable_gripper_feedback = self.config["controller"]["gripper_feedback"][
             "enable"
@@ -552,36 +575,26 @@ class FACTRTeleop(Node, ABC):
         )
         return tau_n
 
-    def null_space_torque_optimization(self, arm_joint_pos, eef_external_torque, o_T_eef):
+    def null_space_torque_optimization(self, arm_joint_pos, arm_joint_vel, eef_external_torque, o_T_eef):
+
+        #compute objective function for torque optimization dW/dq
         J = pin.computeJointJacobian(
                     self.pin_model, self.pin_data, arm_joint_pos, self.num_arm_joints
                 )
         
         J_dagger = np.linalg.pinv(J)
 
-        
-        # K = np.diag(eef_external_torque)
-        K = np.diag(np.abs(self.gain_null_external_forces*eef_external_torque))
+        K = np.diag(np.abs(self.torque_opt_weight_extF*eef_external_torque))
+        dq_opt = self.dq_torque_opt(arm_joint_pos, arm_joint_vel, K, o_T_eef)
 
-        print(eef_external_torque)
-
-        if np.trace(K)>1e-6:
-            print(True)
-            dW_force, dW_moment = self.grad_W_torque_optimization(arm_joint_pos, K, o_T_eef)
-        else:
-            print(False)
-            dW_force = np.zeros(len(arm_joint_pos))
-            dW_moment = np.zeros(len(arm_joint_pos))
-
-        dq_opt = self.torque_opt_gain[0]*dW_force + self.torque_opt_gain[1]*dW_moment
+        # project to null space
         null_space_projector = np.eye(self.num_arm_joints) - J_dagger @ J
-
         tau_n_opt = null_space_projector @ dq_opt
         
         return tau_n_opt
 
 
-    def W_torque_optimization(self, q, K, o_T_eef):
+    def objective_torque_opt(self, q, K, o_T_eef):
         # transform geometric Jacobian to analytical
         J = pin.computeJointJacobian(
             self.pin_model, self.pin_data, q, self.num_arm_joints
@@ -617,25 +630,49 @@ class FACTRTeleop(Node, ABC):
 
         return W_force, W_moment
 
-    def grad_W_torque_optimization(self, q, K, o_T_eef, h=1e-6):
-        dW_froce = np.zeros(len(q))
+    def objective_joint_limits(self, q):
+        a = self.torque_opt_limit_param_a
+        b = self.torque_opt_limit_param_b
+        c = self.arm_joint_limits_min + (self.arm_joint_limits_max - self.arm_joint_limits_min) / 2
+        return (
+                    np.tanh(a * (q - c) + b)
+                    + np.tanh(-a * (q - c) + b)
+                    + 2
+                )
+
+    def dq_torque_opt(self, q, dq, K, o_T_eef, h=1e-6):
+        dW_force = np.zeros(len(q))
         dW_moment = np.zeros(len(q))
+        dJ_L = np.zeros(len(q))
 
         for i in range(len(q)):
             dq = np.zeros(len(q)); dq[i]=h
-            W_force_plus, W_moment_plus = self.W_torque_optimization(
+
+            #compute dW 
+            W_force_plus, W_moment_plus = self.objective_torque_opt(
                 q + dq, K, o_T_eef
             )
-            W_force_minus, W_moment_minus = self.W_torque_optimization(
+            W_force_minus, W_moment_minus = self.objective_torque_opt(
                 q - dq, K, o_T_eef
             )
 
-            # print(self.W_torque_optimization(q, K, o_T_eef))
-
-            dW_froce[i] = (W_force_plus - W_force_minus) / (2 * h)
+            dW_force[i] = (W_force_plus - W_force_minus) / (2 * h)
             dW_moment[i] = (W_moment_plus - W_moment_minus) / (2 * h)
 
-        return dW_froce, dW_moment
+            #compute dJ_L
+            J_L_plus = self.objective_joint_limits(
+                q + dq
+            )
+            J_L_minus = self.objective_joint_limits(
+                q - dq
+            )
+            
+            dJ_L[i] = (J_L_plus - J_L_minus) / (2 * h)
+            
+
+        dq_opt = self.torque_opt_gain[0]*dW_force + self.torque_opt_gain[1]*dW_moment + self.torque_opt_damping*dq + self.torque_opt_limit_gain * dJ_L
+
+        return dq_opt
 
     def torque_feedback(self, external_torque, arm_joint_vel):
         """
@@ -674,12 +711,16 @@ class FACTRTeleop(Node, ABC):
             leader_arm_pos, leader_arm_vel, leader_gripper_pos, leader_gripper_vel
         )
         torque_arm += torque_l
-        torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
 
         if self.enable_torque_optimization:
             eef_external_torque = self.get_follower_eef_external_wrench()
             o_T_eef = self.get_follower_o_T_eef()
-            torque_arm += self.null_space_torque_optimization(leader_arm_pos, eef_external_torque, o_T_eef)
+            if np.prod(eef_external_torque) > 1e-6:
+                torque_arm += self.null_space_torque_optimization(leader_arm_pos, leader_arm_vel, eef_external_torque, o_T_eef)
+            else:
+                torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
+        else:
+            torque_arm += self.null_space_regulation(leader_arm_pos, leader_arm_vel)
 
         if self.enable_gravity_comp:
             torque_arm += self.gravity_compensation(leader_arm_pos, leader_arm_vel)
