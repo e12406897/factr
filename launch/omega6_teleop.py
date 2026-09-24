@@ -35,6 +35,11 @@ import tyro
 _SRC_FACTR = Path(__file__).parent.parent / "src" / "factr"
 sys.path.insert(0, str(_SRC_FACTR))
 sys.path.insert(0, str(_SRC_FACTR / "python_utils"))
+# factr_teleop is a nested ament_python ROS2 package too (src/factr/factr_teleop/
+# factr_teleop/, same layout as python_utils above) -- needs the same extra insert,
+# otherwise "factr_teleop" resolves to the outer (non-package) directory and importing
+# factr_teleop.cartesian_leader fails.
+sys.path.insert(0, str(_SRC_FACTR / "factr_teleop"))
 
 from python_utils.global_configs import (
     franka_left_real_zmq_addresses,
