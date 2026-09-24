@@ -146,6 +146,10 @@ class Args:
     control_freq: float = 20.0
     pos_sensitivity: float = 1.0
     rot_sensitivity: float = 1.0
+    # Max end-effector step per control tick (robosuite IK_POSE defaults); max speed is
+    # ik_pos_limit * control_freq [m/s] and ik_ori_limit * control_freq [rad/s].
+    ik_pos_limit: float = 0.02
+    ik_ori_limit: float = 0.05
     # e.g. /dev/hidraw3 -- only needed if the auto-detected device/interface is wrong
     device_path: str = ""
 
@@ -161,6 +165,8 @@ def main(args: Args) -> None:
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,
+        ik_pos_limit=args.ik_pos_limit,
+        ik_ori_limit=args.ik_ori_limit,
         node_name=f"spacemouse_leader_{args.side}",
     )
     spin(leader)
