@@ -18,11 +18,13 @@ import os
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
+import time
+
 import numpy as np
 import pinocchio as pin
 import rclpy
 from python_utils.utils import get_workspace_root
-from python_utils.zmq_messenger import ZMQPublisher
+from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
@@ -81,11 +83,23 @@ class CartesianLeader(Node, ABC):
         # `pin.computeJointJacobian(..., self.num_arm_joints)` already relies on).
         self._tip_joint_id = num_arm_joints
 
-        self.q = (
-            np.array(home_joint_pos, dtype=float)
-            if home_joint_pos is not None
-            else np.zeros(num_arm_joints)
-        )
+        if home_joint_pos is not None:
+            self.q = np.array(home_joint_pos, dtype=float)
+        else:
+            # Default: start exactly where the follower currently is, not an arbitrary
+            # pose -- read its current joint state off the SAME ZMQ channel
+            # FACTRTeleop's leader connects to (bound by the follower, so this is
+            # already being published regardless of who's driving it).
+            state_sub = ZMQSubscriber(zmq_addresses["joint_state_sub"])
+            self.get_logger().info(
+                f"CartesianLeader '{name}': waiting for the follower's current joint "
+                "state before starting (so the first published command doesn't jump "
+                "it to an arbitrary pose) ..."
+            )
+            while state_sub.message is None:
+                time.sleep(0.1)
+            self.q = np.array(state_sub.message[:num_arm_joints], dtype=float)
+
         pin.forwardKinematics(self._pin_model, self._pin_data, self.q)
         home_pose = self._pin_data.oMi[self._tip_joint_id]
         self._target_pos = home_pose.translation.copy()
