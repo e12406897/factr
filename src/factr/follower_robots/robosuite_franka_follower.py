@@ -399,7 +399,10 @@ class RobosuiteFrankaFollower:
         robot = self._env.robots[side]
         name = self._eef_name[side]
         dof_idx = self._dof_idx[side]
-        tau_ext = self._get_contact_torque(dof_idx)  # contact-only, gravity excluded
+        # contact-only, gravity excluded; negated like the joint-torque channel (see
+        # serve()), so wrench and joint torque share the real robot's libfranka sign
+        # convention (tau_ext_hat_filtered = J^T @ O_F_ext_hat_K).
+        tau_ext = -self._get_contact_torque(dof_idx)
         jacp = robot.sim.data.get_body_jacp(name)[:, dof_idx]  # (3, 7), world frame
         jacr = robot.sim.data.get_body_jacr(name)[:, dof_idx]  # (3, 7), world frame
         J = np.vstack([jacp, jacr])  # (6, 7)

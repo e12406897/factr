@@ -20,6 +20,11 @@ home at the workspace centre, where it is held) -- keep hands off until "ready" 
 logged. At that moment the handle is released (gravity compensation keeps it floating)
 and its home is matched to the follower's current pose. Button 0 toggles the gripper.
 
+Force feedback: the follower's external end-effector force (tared at startup, so start
+without contact) is rendered on the handle as -force_feedback_gain * F_ext, the
+Cartesian counterpart of FACTRTeleop's joint-torque feedback. The passive wrist can't
+render moments.
+
 Usage:
     python3 launch/omega6_teleop.py --side left
     python3 launch/omega6_teleop.py --side sim_right
@@ -59,6 +64,11 @@ _ZMQ_ADDRESSES = {
 # Omega frame: x toward the operator, y to the operator's right, z up. The operator faces
 # the robot (robot +x points toward the operator), so both frames are aligned.
 _OMEGA_TO_BASE = np.eye(3)
+
+# Low-pass time constant [s] on the rendered feedback force, and viscous damping
+# [N/(m/s)] on the handle.
+_FORCE_FILTER_TIME = 0.03
+_HANDLE_DAMPING = 1.0
 
 
 def _ensure_libdrd_findable(logger) -> None:
@@ -135,14 +145,20 @@ class _OmegaHaptics:
         self._pos = None
         self._rot = None
         self._button = False
+        self._force_cmd = np.zeros(3)  # feedback force target, device frame [N]
         self._running = True
 
-    def release(self) -> None:
+    def set_force(self, force: np.ndarray) -> None:
+        with self._lock:
+            self._force_cmd = np.array(force, dtype=np.float64)
+
+    def release(self, max_force: float) -> None:
         """Hand the handle over to the operator: stop holding it at home, keep forces on
         for gravity compensation, and start streaming its pose."""
         dhd, drd = self._dhd, self._drd
         drd.stop(True)
         dhd.setGravityCompensation(True)
+        dhd.setMaxForce(max_force)
         if dhd.enableForce(True) < 0:
             raise RuntimeError(f"dhd.enableForce() failed: {dhd.errorGetLastStr()}")
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -154,10 +170,22 @@ class _OmegaHaptics:
         dhd = self._dhd
         pos = [0.0, 0.0, 0.0]
         mat = [[0.0, 0.0, 0.0] for _ in range(3)]
-        zero = (0.0, 0.0, 0.0)
+        vel = [0.0, 0.0, 0.0]
+        force = np.zeros(3)
+        # The target only updates at the leader's 20 Hz -- low-pass it here at the
+        # haptic rate so the operator feels a smooth force, not 20 Hz steps.
+        alpha = 1.0 - np.exp(-self._period / _FORCE_FILTER_TIME)
         while self._running:
             ok = dhd.getPositionAndOrientationFrame(pos, mat) >= 0
-            dhd.setForce(zero)
+            with self._lock:
+                force_cmd = self._force_cmd
+            force += alpha * (force_cmd - force)
+            # Light viscous damping keeps the delayed force loop
+            # (handle -> robot -> wrench -> handle) from oscillating.
+            out = force.copy()
+            if dhd.getLinearVelocity(vel) >= 0:
+                out -= _HANDLE_DAMPING * np.array(vel)
+            dhd.setForce(tuple(out))
             button = dhd.getButton(self._button_index) == 1
             if ok:
                 with self._lock:
@@ -187,13 +215,18 @@ class _Omega6CartesianLeader(CartesianLeader):
         translation_scale: float,
         rotation_scale: float,
         haptic_rate: float,
+        force_feedback_gain: float,
+        max_force: float,
         **kwargs,
     ):
         self._translation_scale = translation_scale
         self._rotation_scale = rotation_scale
+        self._force_feedback_gain = force_feedback_gain
+        self._max_force = max_force
         self._prev_button = False
         self._gripper_closed = False
         self._home = None  # handle (pos, rot) when teleop started
+        self._wrench_bias = None  # follower wrench at teleop start (no contact assumed)
 
         self._haptics = _OmegaHaptics(
             gripper_button_index, haptic_rate, logger=_StdoutLogger()
@@ -203,7 +236,7 @@ class _Omega6CartesianLeader(CartesianLeader):
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool]:
         if self._home is None:
             # Teleop starts now: release the handle from its home and zero on it there.
-            self._haptics.release()
+            self._haptics.release(self._max_force)
             pos, rot, self._prev_button = self._haptics.latest()
             self._home = (pos, rot)
         pos, rot, button = self._haptics.latest()
@@ -220,6 +253,22 @@ class _Omega6CartesianLeader(CartesianLeader):
         d_aa = T.quat2axisangle(T.mat2quat(d_rot)) * self._rotation_scale
         rot_offset = T.quat2mat(T.axisangle2quat(d_aa))
         return pos_offset, rot_offset, self._gripper_closed
+
+    def render_feedback(self, wrench: np.ndarray) -> None:
+        # Omega.6 has a passive wrist: only the force part can be rendered.
+        force = wrench[:3]
+        if self._wrench_bias is None:
+            # Tare: remove the estimator's offset at the start pose (no contact yet).
+            self._wrench_bias = force.copy()
+        force = force - self._wrench_bias
+        # Same soft deadband as FACTRTeleop.torque_feedback (suppresses estimator noise).
+        force = force * (1.0 - 1.0 / np.cosh(force))
+        # Same sign as FACTRTeleop's -gain * tau_ext, mapped base -> device frame.
+        f_dev = -self._force_feedback_gain * _OMEGA_TO_BASE.T @ force
+        norm = np.linalg.norm(f_dev)
+        if norm > self._max_force:
+            f_dev *= self._max_force / norm
+        self._haptics.set_force(f_dev)
 
     def destroy_node(self):
         self._haptics.close()
@@ -245,6 +294,10 @@ class Args:
     ik_ori_limit: float = 0.05
     gripper_button_index: int = 0
     haptic_rate: float = 1000.0
+    # Handle force per follower contact force [N/N]; 0 disables force feedback.
+    force_feedback_gain: float = 0.2
+    # Hard limit on the rendered handle force [N] (also set as the device's own limit).
+    max_force: float = 4.0
 
 
 def main(args: Args) -> None:
@@ -256,6 +309,8 @@ def main(args: Args) -> None:
         translation_scale=args.translation_scale,
         rotation_scale=args.rotation_scale,
         haptic_rate=args.haptic_rate,
+        force_feedback_gain=args.force_feedback_gain,
+        max_force=args.max_force,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,

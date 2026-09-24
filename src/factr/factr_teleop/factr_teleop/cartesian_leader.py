@@ -108,6 +108,8 @@ class CartesianLeader(Node, ABC):
         self._home_pos = self._ee_pos.copy()
         self._home_rot = self._ee_rot.copy()
 
+        # Follower's external end-effector wrench [Fx,Fy,Fz,Mx,My,Mz], base frame.
+        self._wrench_sub = ZMQSubscriber(zmq_addresses["eef_wrench_sub"])
         self._cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
         self._gripper_pub = self.create_publisher(
             JointState, f"/factr_teleop/{name}/cmd_gripper_pos", 10
@@ -132,6 +134,12 @@ class CartesianLeader(Node, ABC):
             grasp: True = gripper should be closed.
         """
         raise NotImplementedError
+
+    def render_feedback(self, wrench: np.ndarray) -> None:
+        """Called once per control tick (after read_device) with the follower's external
+        end-effector wrench [Fx,Fy,Fz,Mx,My,Mz] in the ROBOT BASE frame, same sign
+        convention as the joint-torque channel FACTRTeleop renders as -gain * tau_ext.
+        Devices without force output ignore it."""
 
     def _follower_q(self) -> np.ndarray:
         return np.array(self._state_sub.message[: self._num_arm_joints], dtype=np.float64)
@@ -192,6 +200,8 @@ class CartesianLeader(Node, ABC):
 
         self._update_kinematics(self._q_cmd)
         pos_offset, rot_offset, grasp = self.read_device()
+        if self._wrench_sub.message is not None:
+            self.render_feedback(np.array(self._wrench_sub.message, dtype=np.float64))
 
         target_pos = self._home_pos + pos_offset
         target_rot = rot_offset @ self._home_rot
