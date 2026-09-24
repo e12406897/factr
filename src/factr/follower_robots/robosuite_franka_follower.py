@@ -141,7 +141,8 @@ class RobosuiteFrankaFollower:
     robosuite and this breaks). On top of the raw contact torque, the SAME adaptive
     smoothing filter as `MujocoFrankaFollower._get_arm_external_torque` is applied when
     `enable_var_scale_feedback=True`: fast tracking on rising edges (contact onset),
-    slow decay otherwise, via a `tanh`-scaled step -- see `_filter_torque`. As in the
+    slow decay otherwise, via a `tanh`-scaled step -- see `_filter_ext` (also applied,
+    with its own state, to the published end-effector wrench). As in the
     MuJoCo follower, the filtered signal is sign-flipped before publishing on
     `joint_torque_sub` (empirically matched sign convention there; re-verify here).
     Gripper torque feedback is NOT implemented (the gripper's own
@@ -179,7 +180,6 @@ class RobosuiteFrankaFollower:
         damping_ratio: float = 1.0,
         enable_var_scale_feedback: bool = False,
         var_scale_factor: float = 1.0,
-        ema_beta: float = 0.8, 
         enable_metrics: bool = True,
         metrics_window_size: int = 100,
         enable_wrist_cameras: bool = False,
@@ -202,6 +202,7 @@ class RobosuiteFrankaFollower:
         self._ext_arm_torque_prev = [
             np.zeros(num_arm_joints) for _ in range(num_robots)
         ]
+        self._ext_wrench_prev = [np.zeros(6) for _ in range(num_robots)]
 
         arm_controller_config = {
             "type": "JOINT_POSITION",
@@ -329,10 +330,6 @@ class RobosuiteFrankaFollower:
             if enable_metrics
             else None
         )
-        self._wrench_ema = [np.zeros(6) for _ in range(num_robots)]
-        self.ema_beta = ema_beta
-
-        
 
         self._enable_wrist_cameras = enable_wrist_cameras
         if enable_wrist_cameras:
@@ -428,25 +425,28 @@ class RobosuiteFrankaFollower:
             cv2.imshow(f"{self._names[side]} wrist", rgb[:, :, ::-1])
         cv2.waitKey(1)
 
-    def _filter_torque(self, side: int, curr_ext_torque: np.ndarray) -> np.ndarray:
+    def _filter_ext(
+        self, state: List[np.ndarray], side: int, curr_ext: np.ndarray
+    ) -> np.ndarray:
         """Adaptive smoothing identical to `MujocoFrankaFollower._get_arm_external_torque`:
         tracks rising edges (contact onset) almost immediately via a `tanh`-scaled
         step, but decays slowly otherwise, so brief contact spikes are felt promptly
-        while noise gets smoothed out."""
-        prev = self._ext_arm_torque_prev[side]
+        while noise gets smoothed out. `state` holds each signal's own filter history
+        (external joint torque / end-effector wrench), per side."""
+        prev = state[side]
         if self._enable_var_scale_feedback:
-            for i in range(len(curr_ext_torque)):
-                delta = curr_ext_torque[i] - prev[i]
-                if abs(curr_ext_torque[i]) - abs(prev[i]) > 0:
+            for i in range(len(curr_ext)):
+                delta = curr_ext[i] - prev[i]
+                if abs(curr_ext[i]) - abs(prev[i]) > 0:
                     scale = np.tanh(self._var_scale_factor * abs(delta)) / (
                         self._var_scale_factor * abs(delta) + 1e-8
                     )
                     prev[i] += delta * scale
                 else:
-                    prev[i] = curr_ext_torque[i]
+                    prev[i] = curr_ext[i]
         else:
-            prev = curr_ext_torque
-        self._ext_arm_torque_prev[side] = prev
+            prev = curr_ext
+        state[side] = prev
         return prev
 
     def _build_action(self) -> np.ndarray:
@@ -481,13 +481,13 @@ class RobosuiteFrankaFollower:
             for side in range(self._num_robots):
                 q = self._env.sim.data.qpos[self._qpos_idx[side]].copy()
                 raw_tau = self._get_contact_torque(self._dof_idx[side])
-                filtered_tau = self._filter_torque(side, raw_tau)
+                filtered_tau = self._filter_ext(self._ext_arm_torque_prev, side, raw_tau)
                 self._state_pub[side].send_message(q)
                 self._torque_pub[side].send_message(-filtered_tau)
                 self._raw_torque_pub[side].send_message(raw_tau)
 
-                wrench, o_T_eef = self._get_eef_wrench_and_pose(side)
-                self._wrench_ema[side] = self.ema_beta * self._wrench_ema[side] + (1 - self.ema_beta) * wrench
+                raw_wrench, o_T_eef = self._get_eef_wrench_and_pose(side)
+                wrench = self._filter_ext(self._ext_wrench_prev, side, raw_wrench)
                 self._eef_wrench_pub[side].send_message(wrench)
                 self._o_t_ee_pub[side].send_message(o_T_eef.flatten(order="F"))
 

@@ -192,8 +192,9 @@ class FrankaRos2Follower(Node):
             f"forwarding to {trajectory_topic} ..."
         )
 
-        #filter cache
+        #filter cache (one history per filtered signal)
         self.ext_arm_torque_prev = np.zeros(num_arm_joints)
+        self.ext_wrench_prev = np.zeros(6)
         self.var_scale_factor = var_scale_factor
 
     def _on_robot_state(self, msg: FrankaRobotState) -> None:
@@ -204,14 +205,15 @@ class FrankaRos2Follower(Node):
         self.ee_pos = np.array(msg.o_t_ee[-4:-1], dtype=np.float64)
         self._current_q = q
         self._state_pub.send_message(q)
-        tau_ext = self.filter_tau_ext(tau_ext)
+        tau_ext = self.filter_ext(tau_ext, self.ext_arm_torque_prev)
         self._torque_pub.send_message(tau_ext)
         self._raw_torque_pub.send_message(tau_ext)
         # O_F_ext_hat_K / O_T_EE are already in the base frame ("O") as reported by
         # libfranka -- no extra transform needed before forwarding them.
-        self._eef_wrench_pub.send_message(
-            np.array(msg.o_f_ext_hat_k, dtype=np.float64)
+        wrench = self.filter_ext(
+            np.array(msg.o_f_ext_hat_k, dtype=np.float64), self.ext_wrench_prev
         )
+        self._eef_wrench_pub.send_message(wrench)
         self._o_t_ee_pub.send_message(np.array(msg.o_t_ee, dtype=np.float64))
 
     def out_of_bounds(self) -> bool:
@@ -232,21 +234,22 @@ class FrankaRos2Follower(Node):
         else:
             return False
 
-    def filter_tau_ext(self, tau_ext):
-
-        for i in range(len(tau_ext)):
-            delta = tau_ext[i] - self.ext_arm_torque_prev[i]
-            if abs(tau_ext[i]) - abs(self.ext_arm_torque_prev[i]) > 0:
+    def filter_ext(self, value, prev):
+        """Variable-scale filter, updates the signal's own history `prev` in place and
+        returns it (external joint torque / end-effector wrench)."""
+        for i in range(len(value)):
+            delta = value[i] - prev[i]
+            if abs(value[i]) - abs(prev[i]) > 0:
 
                 scale = np.tanh(self.var_scale_factor * abs(delta)) / (
                     self.var_scale_factor * abs(delta) + 1e-8
                 )
-                self.ext_arm_torque_prev[i] += delta * scale
+                prev[i] += delta * scale
 
             else:
-                self.ext_arm_torque_prev[i] = tau_ext[i]
+                prev[i] = value[i]
 
-        return self.ext_arm_torque_prev
+        return prev
 
 
     def _trajectory_point_duration(self, target_q: np.ndarray) -> Duration:
