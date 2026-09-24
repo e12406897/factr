@@ -29,6 +29,7 @@ from python_utils.utils import get_workspace_root
 from rclpy.node import Node
 
 from factr_teleop.dynamixel.driver import DynamixelDriver
+from pynput import keyboard
 
 
 def find_ttyusb(port_name):
@@ -177,15 +178,25 @@ class FACTRTeleop(Node, ABC):
         self.enable_torque_optimization = self.config["controller"]["null_space_torque_optimization"][
             "enable"
         ]
-        self.torque_opt_weight_extF = np.array(
-            self.config["controller"]["null_space_torque_optimization"][
-                "weight_external_forces"
-            ]
-        )
+        # self.torque_opt_weight_extF = np.array(
+        #     self.config["controller"]["null_space_torque_optimization"][
+        #         "weight_external_forces"
+        #     ]
+        # )
+        # self.torque_opt_gain_force = np.array(
+        #     self.config["controller"]["null_space_torque_optimization"][
+        #         "gain_force"
+        # ]
+        # )
+        # self.torque_opt_gain_moment = np.array(
+        #             self.config["controller"]["null_space_torque_optimization"][
+        #                 "gain_moment"
+        #         ]
+        #         )
         self.torque_opt_gain = np.array(
             self.config["controller"]["null_space_torque_optimization"][
                 "gain"
-        ]
+            ]
         )
         self.torque_opt_damping = np.array(
             self.config["controller"]["null_space_torque_optimization"][
@@ -211,7 +222,14 @@ class FACTRTeleop(Node, ABC):
                 "manip_gain"
         ]
         )
+        # hotkey switch
+        if self.name in ['left', 'sim_left']:
+            self.nullspace_switch_key = keyboard.Key.f8
+        else:
+            self.nullspace_switch_key = keyboard.Key.f9
 
+        self.keyboard_listener = keyboard.Listener( on_press=self.on_press ) 
+        self.keyboard_listener.start()
 
         # gripper feedback
         self.enable_gripper_feedback = self.config["controller"]["gripper_feedback"][
@@ -584,9 +602,7 @@ class FACTRTeleop(Node, ABC):
         return tau_n
 
     def null_space_torque_optimization(self, arm_joint_pos, arm_joint_vel, eef_external_torque, o_T_eef):
-        print('in Nullspace function')
 
-        print(eef_external_torque)
         #compute objective function for torque optimization dW/dq
         J = pin.computeJointJacobian(
                     self.pin_model, self.pin_data, arm_joint_pos, self.num_arm_joints
@@ -594,7 +610,7 @@ class FACTRTeleop(Node, ABC):
         
         J_dagger = np.linalg.pinv(J)
 
-        K = np.diag(np.abs(self.torque_opt_weight_extF*eef_external_torque))
+        K = np.diag(np.abs(eef_external_torque))
         dq_opt = self.dq_torque_opt(arm_joint_pos, arm_joint_vel, K, o_T_eef)
 
         # project to null space
@@ -632,18 +648,22 @@ class FACTRTeleop(Node, ABC):
         
         
         tr_F = np.trace(K[0:3, 0:3])
-        W_force = 0.0
-        if tr_F > 1e-9:
-            term_1 = J_A_force@J_A_force.T / np.trace(J_A_force@J_A_force.T) - K[0:3, 0:3] / tr_F
-            W_force = np.sqrt(np.trace(term_1@term_1.T))
-
         tr_M = np.trace(K[3:, 3:])
-        W_moment = 0.0
-        if tr_M > 1e-9:
-            term_1 = J_A_moment@J_A_moment.T / np.trace(J_A_moment@J_A_moment.T) - K[3:, 3:] / tr_M
-            W_moment = np.sqrt(np.trace(term_1@term_1.T))
 
-        return W_force, W_moment
+        W_force = np.zeros(3)
+        for i in range(3):
+            if tr_F > 1e-9:
+                W_force[i] = J_A_force[i]@J_A_force[i].T / np.trace(J_A_force@J_A_force.T) - K[i, i] / tr_F
+
+        
+        W_moment = np.zeros(3)
+        for i in range(3):
+            if tr_F > 1e-9:
+                W_moment[i] = J_A_moment[i]@J_A_moment[i].T / np.trace(J_A_moment@J_A_moment.T) - K[i+3, i+3] / tr_M
+
+        W = np.concatenate((W_force, W_moment))
+
+        return W
 
     # def objective_joint_limits(self, q_i, joint_id):
     #     a = self.torque_opt_limit_param_a[joint_id]
@@ -663,9 +683,7 @@ class FACTRTeleop(Node, ABC):
         return np.linalg.det(J@J.T)
 
     def dq_torque_opt(self, q, dq, K, o_T_eef, h=1e-6):
-        print('in dq_torque_opt function')
-        dW_force = np.zeros(len(q))
-        dW_moment = np.zeros(len(q))
+        dW = np.zeros((6, len(q)))
         # dJ_L = np.zeros(len(q))
         dM = np.zeros(len(q))
 
@@ -674,15 +692,15 @@ class FACTRTeleop(Node, ABC):
             e = np.zeros(len(q)); e[i] = h
 
             # compute dW
-            W_force_plus, W_moment_plus = self.objective_torque_opt(
+            W_plus = self.objective_torque_opt(
                 q + e, K, o_T_eef
             )
-            W_force_minus, W_moment_minus = self.objective_torque_opt(
+
+            W_minus = self.objective_torque_opt(
                 q - e, K, o_T_eef
             )
 
-            dW_force[i] = (W_force_plus - W_force_minus) / (2 * h)
-            dW_moment[i] = (W_moment_plus - W_moment_minus) / (2 * h)
+            dW[:, i] = (W_plus - W_minus) / (2 * h)
 
             # # compute dJ_L
             # J_L_plus = self.objective_joint_limits(
@@ -705,8 +723,7 @@ class FACTRTeleop(Node, ABC):
         alpha = self.hysteresis_switch(norm_ext_force)
 
         dq_opt = (
-            self.torque_opt_gain[0] * dW_force * alpha
-            + self.torque_opt_gain[1] * dW_moment * alpha
+            np.sum(self.torque_opt_gain[:, None] * dW, axis=0) * alpha
             - self.torque_opt_damping * dq
             # - self.torque_opt_avoid_limit_gain * dJ_L
             + self.torque_opt_manip_gain * dM * (1-alpha)
@@ -718,11 +735,11 @@ class FACTRTeleop(Node, ABC):
         switch_on = False
 
         if switch_on:
-            alpha = 0.5*(np.tanh(13.4* (x - 0.25)) + 1)
+            alpha = 0.5*(np.tanh(13.4* (x - 3)) + 1)
             if alpha < 3e-3:
                 switch_on = False
         else:
-            alpha = 0.5*(np.tanh(6.4* (x - 0.5)) + 1)
+            alpha = 0.5*(np.tanh(6.4* (x - 3.5)) + 1)
             if alpha > 0.99:
                 switch_on = True
 
@@ -747,6 +764,12 @@ class FACTRTeleop(Node, ABC):
 
         return tau_ff
 
+    def on_press(self, key):
+        if key == self.nullspace_switch_key:
+            self.enable_torque_optimization = not self.enable_torque_optimization
+
+            print( "Torque optimization:", self.enable_torque_optimization )
+
     def control_loop_callback(self):
         """
         Runs the main control loop of the leader arm.
@@ -757,6 +780,7 @@ class FACTRTeleop(Node, ABC):
         support a 500 Hz control frequency, ensure that the Baud Rate is set to 4 Mbps
         and the Return Delay Time is set to 0 using the Dynamixel Wizard software.
         """
+
         leader_arm_pos, leader_arm_vel, leader_gripper_pos, leader_gripper_vel = (
             self.get_leader_joint_states()
         )
