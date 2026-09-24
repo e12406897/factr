@@ -138,7 +138,7 @@ class FACTRTeleopFrankaZMQ(FACTRTeleop):
                 1,
             )
 
-        if self.enable_torque_optimization:
+        if self.enable_nullspace_manip:
             # ZMQ subscribers for the follower's end-effector external wrench
             # [Fx,Fy,Fz,Mx,My,Mz] and O_T_EE (4x4, base frame), used by
             # null_space_torque_optimization/W_torque_optimization.

@@ -175,24 +175,11 @@ class FACTRTeleop(Node, ABC):
 
         # torque optimization (redundancy resolution via end-effector force/moment
         # perturbation, see null_space_torque_optimization/W_torque_optimization)
-        self.enable_torque_optimization = self.config["controller"]["null_space_torque_optimization"][
+        self.enable_nullspace_manip = self.config["controller"]["null_space_torque_optimization"][
             "enable"
         ]
-        # self.torque_opt_weight_extF = np.array(
-        #     self.config["controller"]["null_space_torque_optimization"][
-        #         "weight_external_forces"
-        #     ]
-        # )
-        # self.torque_opt_gain_force = np.array(
-        #     self.config["controller"]["null_space_torque_optimization"][
-        #         "gain_force"
-        # ]
-        # )
-        # self.torque_opt_gain_moment = np.array(
-        #             self.config["controller"]["null_space_torque_optimization"][
-        #                 "gain_moment"
-        #         ]
-        #         )
+        self.enable_torque_opt = False
+
         self.torque_opt_gain = np.array(
             self.config["controller"]["null_space_torque_optimization"][
                 "gain"
@@ -203,21 +190,7 @@ class FACTRTeleop(Node, ABC):
                 "damping"
         ]
         )
-        # self.torque_opt_limit_param_a = np.array(
-        #     self.config["controller"]["null_space_torque_optimization"][
-        #         "avoid_limit_param_a"
-        # ]
-        # )
-        # self.torque_opt_limit_param_b = np.array(
-        #     self.config["controller"]["null_space_torque_optimization"][
-        #         "avoid_limit_param_b"
-        # ]
-        # )
-        # self.torque_opt_avoid_limit_gain = np.array(
-        #     self.config["controller"]["null_space_torque_optimization"][
-        #         "avoid_limit_gain"
-        # ]
-        # )
+
         self.torque_opt_manip_gain = np.array(self.config["controller"]["null_space_torque_optimization"][
                 "manip_gain"
         ]
@@ -665,15 +638,6 @@ class FACTRTeleop(Node, ABC):
 
         return W
 
-    # def objective_joint_limits(self, q_i, joint_id):
-    #     a = self.torque_opt_limit_param_a[joint_id]
-    #     b = self.torque_opt_limit_param_b[joint_id]
-    #     c = self.arm_joint_limits_min[joint_id] + (self.arm_joint_limits_max[joint_id] - self.arm_joint_limits_min[joint_id]) / 2
-    #     return (
-    #         np.tanh(a * (q_i - c) + b)
-    #                 + np.tanh(-a * (q_i - c) + b)
-    #                 + 2
-    #     )
 
     def objective_manipulability(self, q):
         J = pin.computeJointJacobian(
@@ -690,27 +654,17 @@ class FACTRTeleop(Node, ABC):
         for i in range(len(q)):
             #finite difference step
             e = np.zeros(len(q)); e[i] = h
+            if self.enable_torque_opt:
+                # compute dW
+                W_plus = self.objective_torque_opt(
+                    q + e, K, o_T_eef
+                )
 
-            # compute dW
-            W_plus = self.objective_torque_opt(
-                q + e, K, o_T_eef
-            )
+                W_minus = self.objective_torque_opt(
+                    q - e, K, o_T_eef
+                )
 
-            W_minus = self.objective_torque_opt(
-                q - e, K, o_T_eef
-            )
-
-            dW[:, i] = (W_plus - W_minus) / (2 * h)
-
-            # # compute dJ_L
-            # J_L_plus = self.objective_joint_limits(
-            #     q[i] + e[i], i
-            # )
-            # J_L_minus = self.objective_joint_limits(
-            #     q[i] - e[i], i
-            # )
-
-            # dJ_L[i] = (J_L_plus - J_L_minus) / (2 * h)
+                dW[:, i] = (W_plus - W_minus) / (2 * h)
 
             # compute dM
             M_plus = self.objective_manipulability(q + e)
@@ -718,18 +672,24 @@ class FACTRTeleop(Node, ABC):
 
             dM[i] = (M_plus - M_minus) / (2 * h)
 
-        #transition between manipulability and torque optimization
-        norm_ext_force = np.linalg.norm(np.diag(K))
-        alpha = self.hysteresis_switch(norm_ext_force)
+        if self.enable_torque_opt:
+            #transition between manipulability and torque optimization
+            norm_ext_force = np.linalg.norm(np.diag(K))
+            alpha = self.hysteresis_switch(norm_ext_force)
 
-        dq_opt = (
-            np.sum(self.torque_opt_gain[:, None] * dW, axis=0) * alpha
-            - self.torque_opt_damping * dq
-            # - self.torque_opt_avoid_limit_gain * dJ_L
-            + self.torque_opt_manip_gain * dM * (1-alpha)
-        )
-
-        return dq_opt
+            dq_opt = (
+                np.sum(self.torque_opt_gain[:, None] * dW, axis=0) * alpha
+                - self.torque_opt_damping * dq
+                + self.torque_opt_manip_gain * dM * (1-alpha)
+            )
+            return dq_opt
+                
+        else:
+            dq_opt = (
+                            - self.torque_opt_damping * dq
+                            + self.torque_opt_manip_gain * dM
+                        )
+            return dq_opt
 
     def hysteresis_switch(self, x):
         switch_on = False
@@ -766,9 +726,9 @@ class FACTRTeleop(Node, ABC):
 
     def on_press(self, key):
         if key == self.nullspace_switch_key:
-            self.enable_torque_optimization = not self.enable_torque_optimization
+            self.enable_torque_opt = not self.enable_torque_opt
 
-            print( "Torque optimization:", self.enable_torque_optimization )
+            print( "Torque optimization:", self.enable_torque_opt )
 
     def control_loop_callback(self):
         """
@@ -791,7 +751,7 @@ class FACTRTeleop(Node, ABC):
         )
         torque_arm += torque_l
 
-        if self.enable_torque_optimization:
+        if self.enable_nullspace_manip:
             eef_external_torque = self.get_follower_eef_external_wrench()
             o_T_eef = self.get_follower_o_T_eef()
             torque_arm += self.null_space_torque_optimization(leader_arm_pos, leader_arm_vel, eef_external_torque, o_T_eef)
@@ -855,7 +815,7 @@ class FACTRTeleop(Node, ABC):
         the follower arm's end-effector, expressed in the follower's base frame. This is
         used by `null_space_torque_optimization` (Eq. 5/6 in the paper) to build the
         force-moment perturbation matrix K. This method is called at every iteration of
-        the control loop if self.enable_torque_optimization is set to True.
+        the control loop if self.enable_nullspace_manip is set to True.
 
         Returns:
             np.ndarray: A NumPy array of shape (6,), [Fx, Fy, Fz, Mx, My, Mz], in the
@@ -873,7 +833,7 @@ class FACTRTeleop(Node, ABC):
         expressed in the follower's base frame (O_T_EE). Used by
         `null_space_torque_optimization`/`W_torque_optimization` to rotate the task
         Jacobian into the same frame as the external wrench. This method is called at
-        every iteration of the control loop if self.enable_torque_optimization is set
+        every iteration of the control loop if self.enable_nullspace_manip is set
         to True.
 
         Returns:
