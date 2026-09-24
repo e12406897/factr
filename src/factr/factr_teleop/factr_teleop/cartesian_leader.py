@@ -137,9 +137,8 @@ class CartesianLeader(Node, ABC):
 
     def render_feedback(self, wrench: np.ndarray) -> None:
         """Called once per control tick (after read_device) with the follower's external
-        end-effector wrench [Fx,Fy,Fz,Mx,My,Mz] in the ROBOT BASE frame, same sign
-        convention as the joint-torque channel FACTRTeleop renders as -gain * tau_ext.
-        Devices without force output ignore it."""
+        end-effector wrench [Fx,Fy,Fz,Mx,My,Mz] in the ROBOT BASE frame. Devices
+        without force output ignore it."""
 
     def _follower_q(self) -> np.ndarray:
         return np.array(self._state_sub.message[: self._num_arm_joints], dtype=np.float64)

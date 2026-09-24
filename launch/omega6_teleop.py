@@ -21,8 +21,8 @@ logged. At that moment the handle is released (gravity compensation keeps it flo
 and its home is matched to the follower's current pose. Button 0 toggles the gripper.
 
 Force feedback: the follower's external end-effector force (tared at startup, so start
-without contact) is rendered on the handle as -force_feedback_gain * F_ext, the
-Cartesian counterpart of FACTRTeleop's joint-torque feedback. The passive wrist can't
+without contact) is rendered on the handle as force_feedback_gain * F_ext, i.e. the
+handle is pushed away from a contact the way the robot is. The passive wrist can't
 render moments.
 
 Usage:
@@ -263,8 +263,9 @@ class _Omega6CartesianLeader(CartesianLeader):
         force = force - self._wrench_bias
         # Same soft deadband as FACTRTeleop.torque_feedback (suppresses estimator noise).
         force = force * (1.0 - 1.0 / np.cosh(force))
-        # Same sign as FACTRTeleop's -gain * tau_ext, mapped base -> device frame.
-        f_dev = -self._force_feedback_gain * _OMEGA_TO_BASE.T @ force
+        # Push the handle the way the environment pushes the robot (verified on the
+        # device: the opposite sign pulled the handle into the contact). Base -> device.
+        f_dev = self._force_feedback_gain * _OMEGA_TO_BASE.T @ force
         norm = np.linalg.norm(f_dev)
         if norm > self._max_force:
             f_dev *= self._max_force / norm
