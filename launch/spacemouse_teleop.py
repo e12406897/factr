@@ -3,8 +3,8 @@ SpaceMouse, using robosuite 1.5.2's own SpaceMouse driver and device->action pro
 (robosuite/devices/spacemouse.py + Device.input2action) feeding a copy of robosuite's
 IK_POSE controller (see CartesianLeader).
 
-Controls (robosuite's): move/twist the cap to move/rotate the end effector, hold the
-left button to close the gripper, right button re-zeroes the device.
+Controls: move/twist the cap to move/rotate the end effector, left button closes the
+gripper, right button opens it.
 
 Requires the `hidapi` pip package (provides `import hid` with `hid.device()`, which
 robosuite's driver uses) -- NOT the ctypes `hid` package; uninstall that one first if
@@ -114,13 +114,19 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
             rot_sensitivity=rot_sensitivity,
         )
         self._device.start_control()
+        self._gripper_closed = False
         super().__init__(**kwargs)
 
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
         state = self._device.get_controller_state()
+        # Latched gripper: left button closes, right button opens (robosuite's driver
+        # reports the right button as "reset", which also disables it -> re-enable).
+        if state["grasp"]:
+            self._gripper_closed = True
         if state["reset"]:
+            self._gripper_closed = False
             self._device.start_control()
-            return np.zeros(3), np.zeros(3), False, False
+            return np.zeros(3), np.zeros(3), self._gripper_closed, False
 
         # --- robosuite Device.input2action (mirror_actions=False) ---
         dpos = state["dpos"]
@@ -131,7 +137,7 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         dpos = np.clip(dpos, -1, 1)
         drotation = np.clip(drotation, -1, 1)
 
-        return dpos, drotation, bool(state["grasp"]), False
+        return dpos, drotation, self._gripper_closed, False
 
 
 @dataclass
