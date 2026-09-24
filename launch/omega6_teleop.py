@@ -62,12 +62,54 @@ _OMEGA_TO_BASE_BEHIND = np.diag([-1.0, -1.0, 1.0])
 _OMEGA_TO_BASE_FACING = np.eye(3)
 
 
+def _ensure_libdrd_findable(logger) -> None:
+    """forcedimension_core only looks in $FDSDK/lib/release/lin-<machine>-gcc/,
+    ~/.local/lib and /usr/local/lib, and fails at import otherwise. If the SDK sits
+    elsewhere (nested sdk-x.y.z/ folder, other folder naming, FDSDK unset), find libdrd
+    and link it to ~/.local/lib/libdrd.so."""
+    import glob
+    import os
+    import platform
+
+    sdk = os.environ.get("FDSDK")
+    standard = [
+        os.path.expanduser("~/.local/lib/libdrd.so*"),
+        "/usr/local/lib/libdrd.so*",
+    ]
+    if sdk:
+        standard.insert(0, f"{sdk}/lib/release/lin-{platform.machine()}-gcc/libdrd.so.*")
+    if any(glob.glob(p) for p in standard):
+        return
+
+    roots = [r for r in (sdk, str(Path(__file__).parent.parent / "third_party")) if r]
+    found = sorted(
+        f
+        for r in roots
+        for f in glob.glob(f"{r}/**/libdrd.so*", recursive=True)
+        if os.path.isfile(f)
+    )
+    # SDK archives can ship several architectures -- prefer this machine's.
+    found = [f for f in found if platform.machine() in f] or found
+    if not found:
+        raise RuntimeError(
+            f"libdrd not found (FDSDK={sdk!r}, searched {roots}). Extract the Force "
+            "Dimension SDK to third_party/forcedimension_sdk/ in the repo."
+        )
+    link = os.path.expanduser("~/.local/lib/libdrd.so")
+    os.makedirs(os.path.dirname(link), exist_ok=True)
+    if os.path.lexists(link):
+        os.remove(link)
+    os.symlink(found[-1], link)
+    logger.info(f"Linked {found[-1]} -> {link}")
+
+
 class _OmegaHaptics:
     """Owns all SDK calls. A ~1 kHz thread keeps sending zero force (the SDK adds gravity
     compensation on top) so the handle floats, and caches pose + button for the 20 Hz
     control loop."""
 
     def __init__(self, button_index: int, rate_hz: float, logger):
+        _ensure_libdrd_findable(logger)
         from forcedimension_core import dhd, drd
 
         self._dhd, self._drd = dhd, drd
