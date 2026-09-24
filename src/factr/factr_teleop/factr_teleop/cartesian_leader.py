@@ -1,188 +1,175 @@
-"""Bridges a Cartesian-space input device (SpaceMouse, Omega.6, ...) to a FACTR
-follower. Unlike FACTRTeleop (built around a joint-space, force-feedback Dynamixel
-exoskeleton), these devices report end-effector translation/rotation deltas, not joint
-angles.
+"""Bridges a Cartesian-space input device (SpaceMouse, Omega.6, ...) to a FACTR follower
+by publishing joint targets on the same `joint_pos_cmd_pub` ZMQ channel FACTRTeleop uses
+(franka_ros2 v0.1.0 has no Cartesian controller, so IK has to happen leader-side).
 
-Design choice (see the conversation this came out of): inverse kinematics is solved
-HERE, on the leader side, against the FACTR exoskeleton's own URDF -- which already
-shares the follower's joint kinematics by construction (that's the whole point of a
-1:1 replica leader arm) -- and the result is published on the SAME `joint_pos_cmd_pub`
-ZMQ channel FACTRTeleop uses. Nothing on the follower side (real franka_ros2 bridge or
-robosuite) or the ZMQ protocol needs to change, and both keep working unmodified. The
-alternative (follower-side Cartesian impedance controller) was ruled out for real
-hardware: franka_ros2 v0.1.0 (this repo's pinned tag) ships no Cartesian controller at
-all -- only gravity_compensation/joint_impedance/model/move_to_start example
-controllers -- so that path only exists in the robosuite path anyway.
+The IK step is a copy of robosuite 1.5.2's IK_POSE controller
+(robosuite/controllers/parts/arm/ik.py: _clip_ik_input + compute_joint_positions),
+evaluated on robosuite's own Panda + PandaGripper MuJoCo model, with the follower's live
+joint state standing in for robosuite's `sim.data.qpos`.
 """
 import os
-from abc import ABC, abstractmethod
-from typing import Optional, Tuple
-
 import time
+from abc import ABC, abstractmethod
+from typing import Tuple
 
+import mujoco
 import numpy as np
-import pinocchio as pin
 import rclpy
+import robosuite.utils.transform_utils as T
+import yaml
 from python_utils.utils import get_workspace_root
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 
+def _build_robosuite_panda():
+    from robosuite.models import MujocoWorldBase
+    from robosuite.models.grippers import gripper_factory
+    from robosuite.models.robots import Panda
+
+    robot = Panda()
+    # Same naming robosuite's Robot class uses, so the grip site is "gripper0_right_grip_site".
+    gripper = gripper_factory("PandaGripper", idn="0_right")
+    robot.add_gripper(gripper)
+    world = MujocoWorldBase()
+    world.merge(robot)
+    model = world.get_model(mode="mujoco")
+    return model, robot.joints, gripper.important_sites["grip_site"]
+
+
 class CartesianLeader(Node, ABC):
-    """Subclasses implement `read_device()`, called once per control tick, returning
-    the device's translation/rotation deltas plus gripper/button state. This class
-    integrates those deltas into a target end-effector pose, solves damped-least-
-    -squares differential IK (Pinocchio's own standard CLIK recipe) for the
-    corresponding joint target, and publishes it -- same responsibility as
-    FACTRTeleop.control_loop_callback(), just without any of the force-feedback /
-    torque control machinery a passive input device has no use for.
-    """
+    # robosuite IK_POSE defaults (ik.py compute_joint_positions / ik_pose.json)
+    KN = np.array([10.0, 10.0, 10.0, 10.0, 5.0, 5.0, 5.0])
+    DAMPING_PSEUDO_INV = 0.05
+    KPOS = 0.95
+    KORI = 0.95
+    INTEGRATION_DT = 0.1
+    MAX_ANGVEL = 1.0  # velocity_limits=[-1, 1] hardcoded in IK_POSE.get_control
 
     def __init__(
         self,
         name: str,
         zmq_addresses: dict,
-        urdf_path: str = "src/factr/factr_teleop/factr_teleop/urdf/factr_teleop_franka.urdf",
         num_arm_joints: int = 7,
-        control_freq: float = 100.0,
-        home_joint_pos: Optional[np.ndarray] = None,
-        translation_scale: float = 1.0,
-        rotation_scale: float = 1.0,
-        # Cartesian workspace clamp (meters), safety net independent of the follower's
-        # own out_of_bounds() check -- keeps the IK target (and thus the commanded
-        # joint solution) from running away if a device reports a large spurious delta.
-        workspace_min: Tuple[float, float, float] = (-0.6, -0.6, 0.0),
-        workspace_max: Tuple[float, float, float] = (0.6, 0.6, 1.0),
-        gripper_actuation_range: float = 0.08,
-        ik_damping: float = 1e-2,
-        ik_gain: float = 1.0,
+        control_freq: float = 20.0,  # robosuite's default policy/control_freq
+        ik_pos_limit: float = 0.02,
+        ik_ori_limit: float = 0.05,
         node_name: str = "cartesian_leader",
     ):
         super().__init__(node_name)
         self.name = name
         self._num_arm_joints = num_arm_joints
-        self._translation_scale = translation_scale
-        self._rotation_scale = rotation_scale
-        self._workspace_min = np.array(workspace_min)
-        self._workspace_max = np.array(workspace_max)
-        self._gripper_actuation_range = gripper_actuation_range
-        self._ik_damping = ik_damping
-        self._ik_gain = ik_gain
-        self._dt = 1.0 / control_freq
+        self._ik_pos_limit = ik_pos_limit
+        self._ik_ori_limit = ik_ori_limit
 
-        workspace_root = get_workspace_root()
-        full_urdf_path = os.path.join(workspace_root, urdf_path)
-        urdf_dir = os.path.dirname(full_urdf_path)
-        self._pin_model, _, _ = pin.buildModelsFromUrdf(
-            filename=full_urdf_path, package_dirs=urdf_dir
+        self._mj_model, joint_names, site_name = _build_robosuite_panda()
+        self._mj_data = mujoco.MjData(self._mj_model)
+        self._qpos_ids = [self._mj_model.joint(j).qposadr[0] for j in joint_names]
+        self._dof_ids = [self._mj_model.joint(j).dofadr[0] for j in joint_names]
+        self._site_id = self._mj_model.site(site_name).id
+
+        config_path = os.path.join(
+            get_workspace_root(),
+            f"src/factr/factr_teleop/factr_teleop/configs/franka_{name}.yaml",
         )
-        self._pin_data = self._pin_model.createData()
-        # Pinocchio joint index of the arm's tip (== num_arm_joints: base_link is the
-        # root, link_1..link_7 are joints 1..7 -- same convention factr_teleop.py's
-        # `pin.computeJointJacobian(..., self.num_arm_joints)` already relies on).
-        self._tip_joint_id = num_arm_joints
-
-        if home_joint_pos is not None:
-            self.q = np.array(home_joint_pos, dtype=float)
-        else:
-            # Default: start exactly where the follower currently is, not an arbitrary
-            # pose -- read its current joint state off the SAME ZMQ channel
-            # FACTRTeleop's leader connects to (bound by the follower, so this is
-            # already being published regardless of who's driving it).
-            state_sub = ZMQSubscriber(zmq_addresses["joint_state_sub"])
-            self.get_logger().info(
-                f"CartesianLeader '{name}': waiting for the follower's current joint "
-                "state before starting (so the first published command doesn't jump "
-                "it to an arbitrary pose) ..."
+        with open(config_path, "r") as f:
+            self._gripper_open_cmd = float(
+                yaml.safe_load(f)["gripper_teleop"]["actuation_range"]
             )
-            while state_sub.message is None:
-                time.sleep(0.1)
-            self.q = np.array(state_sub.message[:num_arm_joints], dtype=float)
 
-        pin.forwardKinematics(self._pin_model, self._pin_data, self.q)
-        home_pose = self._pin_data.oMi[self._tip_joint_id]
-        self._target_pos = home_pose.translation.copy()
-        self._target_rot = home_pose.rotation.copy()
+        self._state_sub = ZMQSubscriber(zmq_addresses["joint_state_sub"])
+        self.get_logger().info(
+            f"CartesianLeader '{name}': waiting for the follower's joint state on "
+            f"{zmq_addresses['joint_state_sub']} ..."
+        )
+        while self._state_sub.message is None:
+            time.sleep(0.1)
+        # Null-space posture target (robosuite's `initial_joint`): where the follower starts.
+        self._q0 = self._follower_q()
 
         self._cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
         self._gripper_pub = self.create_publisher(
             JointState, f"/factr_teleop/{name}/cmd_gripper_pos", 10
         )
-        self._gripper_closed = False
 
         self.get_logger().info(
             f"CartesianLeader '{name}' ready, publishing on "
-            f"{zmq_addresses['joint_pos_cmd_pub']}. Home pose: "
-            f"pos={self._target_pos}, joints={self.q}."
+            f"{zmq_addresses['joint_pos_cmd_pub']}. Start joints: {self._q0}"
         )
-        self._timer = self.create_timer(self._dt, self._control_loop_callback)
+        self._timer = self.create_timer(1.0 / control_freq, self._control_loop_callback)
 
     @abstractmethod
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
         """Called once per control tick.
 
         Returns:
-            dpos (np.ndarray, shape (3,)): translation delta this tick, device units
-                (get scaled by translation_scale -- device-specific normalization, if
-                any, happens in the subclass).
-            drot (np.ndarray, shape (3,)): rotation delta this tick as an axis-angle
-                (rotation) vector.
-            gripper_toggle (bool): True exactly on the tick the operator asked to
-                open/close the gripper (e.g. a button *edge*, not "is held down" --
-                debouncing is the subclass's responsibility, matching the binary
-                open/close gripper convention FrankaRos2Follower/RobosuiteFrankaFollower
-                already use).
-            should_stop (bool): True to request shutdown (e.g. a dedicated device
-                button), checked every tick.
+            dpos: (3,) end-effector position delta for this step, world/base frame [m]
+                (robosuite IK_POSE action[:3]; clipped to ik_pos_limit here).
+            drot: (3,) axis-angle rotation delta for this step [rad]
+                (robosuite IK_POSE action[3:]; clipped to ik_ori_limit here).
+            grasp: True = gripper should be closed.
+            should_stop: True to request shutdown.
         """
         raise NotImplementedError
 
-    def _solve_ik_step(self) -> None:
-        """One damped-least-squares CLIK step toward (self._target_pos,
-        self._target_rot) -- Pinocchio's own standard inverse-kinematics recipe (see
-        their "Inverse kinematics" example): err = log6(current^-1 * desired), solved
-        in the LOCAL joint frame (matches computeJointJacobian's default reference
-        frame), damped for robustness near singularities, then integrated on the
-        manifold (not a naive q += dq, which breaks for e.g. continuous joints)."""
-        pin.forwardKinematics(self._pin_model, self._pin_data, self.q)
-        current = self._pin_data.oMi[self._tip_joint_id]
-        desired = pin.SE3(self._target_rot, self._target_pos)
-        err = pin.log6(current.inverse() * desired).vector
+    def _follower_q(self) -> np.ndarray:
+        return np.array(self._state_sub.message[: self._num_arm_joints], dtype=np.float64)
 
-        J = pin.computeJointJacobian(
-            self._pin_model, self._pin_data, self.q, self._tip_joint_id
-        )
-        damp = self._ik_damping**2 * np.eye(6)
-        dq = J.T @ np.linalg.solve(J @ J.T + damp, err)
-        self.q = pin.integrate(self._pin_model, self.q, dq * self._ik_gain)
+    def _compute_joint_positions(
+        self, q: np.ndarray, dpos: np.ndarray, drot: np.ndarray
+    ) -> np.ndarray:
+        # --- IK_POSE._clip_ik_input ---
+        if dpos.any():
+            dpos, _ = T.clip_translation(dpos, self._ik_pos_limit)
+        quat = T.axisangle2quat(drot)
+        quat, _ = T.clip_rotation(quat, self._ik_ori_limit)
+        rot = T.quat2mat(quat)
+
+        # --- IK_POSE.compute_joint_positions (single site, delta) ---
+        m, d = self._mj_model, self._mj_data
+        d.qpos[self._qpos_ids] = q
+        mujoco.mj_kinematics(m, d)
+        mujoco.mj_comPos(m, d)
+
+        twist = np.zeros(6)
+        error_quat = np.zeros(4)
+        twist[:3] = self.KPOS * dpos / self.INTEGRATION_DT
+        mujoco.mju_mat2Quat(error_quat, rot.reshape(-1))
+        mujoco.mju_quat2Vel(twist[3:], error_quat, 1.0)
+        twist[3:] *= self.KORI / self.INTEGRATION_DT
+
+        jac = np.zeros((6, m.nv), dtype=np.float64)
+        mujoco.mj_jacSite(m, d, jac[:3], jac[3:], self._site_id)
+        jac = jac[:, self._dof_ids]
+
+        diag = self.DAMPING_PSEUDO_INV**2 * np.eye(6)
+        eye = np.eye(len(self._dof_ids))
+        dq = jac.T @ np.linalg.solve(jac @ jac.T + diag, twist)
+        dq += (eye - np.linalg.pinv(jac) @ jac) @ (self.KN * (self._q0 - q))
+
+        dq_abs_max = np.abs(dq).max()
+        if dq_abs_max > self.MAX_ANGVEL:
+            dq *= self.MAX_ANGVEL / dq_abs_max
+
+        return q + dq * self.INTEGRATION_DT
 
     def _control_loop_callback(self) -> None:
-        dpos, drot, gripper_toggle, should_stop = self.read_device()
+        dpos, drot, grasp, should_stop = self.read_device()
         if should_stop:
             self.get_logger().info(f"CartesianLeader '{self.name}': stop requested.")
             self._timer.cancel()
             return
 
-        self._target_pos = np.clip(
-            self._target_pos + dpos * self._translation_scale,
-            self._workspace_min,
-            self._workspace_max,
+        q_des = self._compute_joint_positions(
+            self._follower_q(), np.asarray(dpos, dtype=np.float64), np.asarray(drot, dtype=np.float64)
         )
-        if np.linalg.norm(drot) > 1e-9:
-            self._target_rot = (
-                pin.exp3(drot * self._rotation_scale) @ self._target_rot
-            )
+        self._cmd_pub.send_message(q_des)
 
-        self._solve_ik_step()
-        self._cmd_pub.send_message(self.q[: self._num_arm_joints])
-
-        if gripper_toggle:
-            self._gripper_closed = not self._gripper_closed
-            width = 0.0 if self._gripper_closed else self._gripper_actuation_range
-            msg = JointState()
-            msg.position = [float(width)]
-            self._gripper_pub.publish(msg)
+        # Every tick (like FACTRTeleop); the followers only act on state changes.
+        msg = JointState()
+        msg.position = [0.0 if grasp else self._gripper_open_cmd]
+        self._gripper_pub.publish(msg)
 
 
 def spin(leader: CartesianLeader) -> None:

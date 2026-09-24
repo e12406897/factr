@@ -59,12 +59,21 @@ _ZMQ_ADDRESSES = {
 
 
 class _Omega6CartesianLeader(CartesianLeader):
-    def __init__(self, gripper_button_index: int, **kwargs):
+    def __init__(
+        self,
+        gripper_button_index: int,
+        translation_scale: float,
+        rotation_scale: float,
+        **kwargs,
+    ):
         import forcedimension_core.dhd as dhd
 
         self._dhd = dhd
         self._gripper_button_index = gripper_button_index
+        self._translation_scale = translation_scale
+        self._rotation_scale = rotation_scale
         self._prev_gripper_button = False
+        self._gripper_closed = False
         self._prev_pos = None
         self._prev_rot = None
 
@@ -98,11 +107,17 @@ class _Omega6CartesianLeader(CartesianLeader):
         self._prev_pos, self._prev_rot = pos, rot
 
         gripper_button = bool(dhd.getButton(self._gripper_button_index))
-        gripper_toggle = gripper_button and not self._prev_gripper_button
+        if gripper_button and not self._prev_gripper_button:
+            self._gripper_closed = not self._gripper_closed
         self._prev_gripper_button = gripper_button
 
         should_stop = bool(dhd.getButton(0)) if self._gripper_button_index != 0 else False
-        return dpos, drot, gripper_toggle, should_stop
+        return (
+            dpos * self._translation_scale,
+            drot * self._rotation_scale,
+            self._gripper_closed,
+            should_stop,
+        )
 
     def destroy_node(self):
         self._dhd.close(self._device_id)
@@ -112,11 +127,10 @@ class _Omega6CartesianLeader(CartesianLeader):
 @dataclass
 class Args:
     side: str = "left"  # left, right, sim_left, sim_right
-    control_freq: float = 500.0  # Omega.6 supports much higher rates than a SpaceMouse
+    control_freq: float = 20.0
     translation_scale: float = 1.0
     rotation_scale: float = 1.0
     gripper_button_index: int = 0
-    gripper_actuation_range: float = 0.08
 
 
 def main(args: Args) -> None:
@@ -130,7 +144,6 @@ def main(args: Args) -> None:
         control_freq=args.control_freq,
         translation_scale=args.translation_scale,
         rotation_scale=args.rotation_scale,
-        gripper_actuation_range=args.gripper_actuation_range,
         node_name=f"omega6_leader_{args.side}",
     )
     spin(leader)

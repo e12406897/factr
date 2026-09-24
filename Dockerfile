@@ -131,10 +131,9 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
-# hidapi (native lib the pyspacemouse Python package's "hid" module links against
-# for the SpaceMouse leader device, launch/spacemouse_teleop.py). Not present on this
-# minimal CUDA base image, so `import hid` fails with a "HID API is probably not
-# installed" error without it.
+# hidapi / libusb runtime libs for the SpaceMouse leader (launch/spacemouse_teleop.py,
+# via robosuite's SpaceMouse driver and the `hidapi` pip package). Not present on this
+# minimal CUDA base image.
 # ============================================================
 
 RUN apt-get update && \
