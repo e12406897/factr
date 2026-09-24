@@ -1,44 +1,42 @@
-"""Drives a FACTR follower (real franka_ros2 bridge or robosuite) with a Force
-Dimension Omega.6 instead of the Dynamixel exoskeleton -- see CartesianLeader's
-docstring for why this solves IK leader-side and reuses the existing joint_pos_cmd_pub
-ZMQ channel unmodified.
+"""Drives a FACTR follower (real franka_ros2 bridge or robosuite) with a Force Dimension
+Omega.6, through the same robosuite-IK leader as the SpaceMouse (see CartesianLeader).
 
-Prerequisite (NOT done yet as of writing this): the Force Dimension SDK
-(libdhd/libdrd) must be installed and working standalone on this machine -- it is
-proprietary, needs Force Dimension's own installer/drivers, and is not just a pip
-install. Verify with one of their own SDK example binaries BEFORE trying this script;
-if the SDK itself can't see the device, nothing here will either.
+The Omega is a position device, so the handle pose is mapped ABSOLUTELY (relative to
+where handle and robot were at startup) and each tick feeds `target - current` into the
+IK step -- the same error form robosuite's IK_POSE.run_controller uses. The robot then
+tracks the handle and catches up if it lags, instead of losing deltas.
 
-    pip install forcedimension-core
+Prerequisites:
+  - Force Dimension SDK >= 3.16 (proprietary, download from forcedimension.com) extracted
+    to $FDSDK (set in the Dockerfile to /factr/third_party/forcedimension_sdk), so that
+    $FDSDK/lib/release/lin-x86_64-gcc/libdrd.so.* exists.
+  - `pip install forcedimension-core` (in requirements.txt).
+  - USB access for the non-root container user: udev rule on the HOST, e.g.
+        SUBSYSTEM=="usb", ATTRS{idVendor}=="1451", MODE="0666"
+    (check the vendor ID with `lsusb`).
 
-UNVERIFIED: the exact forcedimension_core.dhd function names/signatures used in
-_Omega6CartesianLeader.read_device() (dhd.open, dhd.getPosition, dhd.getOrientationFrame,
-dhd.getButton, dhd.close) are Force Dimension's long-standing, documented libdhd API
-surface, but were not runnable/testable here (no Omega.6 hardware or SDK install
-available in this environment). Check them against forcedimension_core's actual
-installed docs/examples (`python3 -m pydoc forcedimension_core.dhd`) before trusting
-this end to end -- this is the one part of the two new leader scripts that has not been
-validated against a real device.
+Startup: if the device isn't calibrated yet, it moves by itself (drd.autoInit) -- keep
+hands off the handle until "ready" is logged. Afterwards the SDK's gravity compensation
+holds the handle, and button 0 toggles the gripper.
 
 Usage:
     python3 launch/omega6_teleop.py --side left
     python3 launch/omega6_teleop.py --side sim_right
 """
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
 import numpy as np
+import robosuite.utils.transform_utils as T
 import tyro
 
 _SRC_FACTR = Path(__file__).parent.parent / "src" / "factr"
 sys.path.insert(0, str(_SRC_FACTR))
 sys.path.insert(0, str(_SRC_FACTR / "python_utils"))
-# factr_teleop is a nested ament_python ROS2 package too (src/factr/factr_teleop/
-# factr_teleop/, same layout as python_utils above) -- needs the same extra insert,
-# otherwise "factr_teleop" resolves to the outer (non-package) directory and importing
-# factr_teleop.cartesian_leader fails.
 sys.path.insert(0, str(_SRC_FACTR / "factr_teleop"))
 
 from python_utils.global_configs import (
@@ -57,6 +55,75 @@ _ZMQ_ADDRESSES = {
     "sim_right": franka_sim_right_zmq_addresses,
 }
 
+# Omega frame: x toward the operator, y to the operator's right, z up.
+# Operator behind the robot (looking along robot +x): robot = (-x, -y, z).
+_OMEGA_TO_BASE_BEHIND = np.diag([-1.0, -1.0, 1.0])
+# Operator facing the robot (robot +x points at the operator): frames coincide.
+_OMEGA_TO_BASE_FACING = np.eye(3)
+
+
+class _OmegaHaptics:
+    """Owns all SDK calls. A ~1 kHz thread keeps sending zero force (the SDK adds gravity
+    compensation on top) so the handle floats, and caches pose + button for the 20 Hz
+    control loop."""
+
+    def __init__(self, button_index: int, rate_hz: float, logger):
+        from forcedimension_core import dhd, drd
+
+        self._dhd, self._drd = dhd, drd
+        self._button_index = button_index
+        self._period = 1.0 / rate_hz
+
+        if drd.open() < 0:
+            raise RuntimeError(f"drd.open() failed: {dhd.errorGetLastStr()}")
+        logger.info(f"Opened {dhd.getSystemName()}")
+
+        if not drd.isInitialized():
+            logger.info("Device not calibrated -- running drd.autoInit(), hands off the handle ...")
+            if drd.autoInit() < 0:
+                raise RuntimeError(f"drd.autoInit() failed: {dhd.errorGetLastStr()}")
+        # Stop the DRD regulation thread but keep forces on, then drive forces via DHD.
+        drd.stop(True)
+        dhd.setGravityCompensation(True)
+        if dhd.enableForce(True) < 0:
+            raise RuntimeError(f"dhd.enableForce() failed: {dhd.errorGetLastStr()}")
+
+        self._lock = threading.Lock()
+        self._pos = None
+        self._rot = None
+        self._button = False
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        while self._pos is None:
+            time.sleep(0.01)
+
+    def _run(self) -> None:
+        dhd = self._dhd
+        pos = [0.0, 0.0, 0.0]
+        mat = [[0.0, 0.0, 0.0] for _ in range(3)]
+        zero = (0.0, 0.0, 0.0)
+        while self._running:
+            ok = dhd.getPositionAndOrientationFrame(pos, mat) >= 0
+            dhd.setForce(zero)
+            button = dhd.getButton(self._button_index) == 1
+            if ok:
+                with self._lock:
+                    self._pos = np.array(pos)
+                    self._rot = np.array(mat)
+                    self._button = button
+            time.sleep(self._period)
+
+    def latest(self) -> Tuple[np.ndarray, np.ndarray, bool]:
+        with self._lock:
+            return self._pos.copy(), self._rot.copy(), self._button
+
+    def close(self) -> None:
+        self._running = False
+        self._thread.join(timeout=1.0)
+        self._dhd.enableForce(False)
+        self._drd.close()
+
 
 class _Omega6CartesianLeader(CartesianLeader):
     def __init__(
@@ -64,73 +131,72 @@ class _Omega6CartesianLeader(CartesianLeader):
         gripper_button_index: int,
         translation_scale: float,
         rotation_scale: float,
+        operator_facing_robot: bool,
+        haptic_rate: float,
         **kwargs,
     ):
-        import forcedimension_core.dhd as dhd
-
-        self._dhd = dhd
-        self._gripper_button_index = gripper_button_index
         self._translation_scale = translation_scale
         self._rotation_scale = rotation_scale
-        self._prev_gripper_button = False
+        self._map = _OMEGA_TO_BASE_FACING if operator_facing_robot else _OMEGA_TO_BASE_BEHIND
+        self._prev_button = False
         self._gripper_closed = False
-        self._prev_pos = None
-        self._prev_rot = None
+        self._anchor = None  # (dev_pos0, dev_rot0, ee_pos0, ee_rot0), set on first tick
 
-        device_id = dhd.open()
-        if device_id < 0:
-            raise RuntimeError(
-                "dhd.open() failed to find an Omega.6 -- check the device is "
-                "connected and that the Force Dimension SDK can see it on its own "
-                "(run one of the SDK's own examples first)."
-            )
-        self._device_id = device_id
+        self._haptics = _OmegaHaptics(
+            gripper_button_index, haptic_rate, logger=_StdoutLogger()
+        )
         super().__init__(**kwargs)
 
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-        dhd = self._dhd
-        # UNVERIFIED against real hardware -- see module docstring. Omega.6 reports
-        # absolute position/orientation (not a per-tick delta like robosuite's own
-        # SpaceMouse driver), so we diff against the previous reading ourselves.
-        pos = np.array(dhd.getPosition())
-        rot = np.array(dhd.getOrientationFrame())  # 3x3 rotation matrix
+        pos, rot, button = self._haptics.latest()
 
-        if self._prev_pos is None:
-            dpos = np.zeros(3)
-            drot = np.zeros(3)
-        else:
-            dpos = pos - self._prev_pos
-            # small-rotation axis-angle approx of the incremental rotation
-            import pinocchio as pin
-
-            drot = pin.log3(self._prev_rot.T @ rot)
-        self._prev_pos, self._prev_rot = pos, rot
-
-        gripper_button = bool(dhd.getButton(self._gripper_button_index))
-        if gripper_button and not self._prev_gripper_button:
+        if button and not self._prev_button:
             self._gripper_closed = not self._gripper_closed
-        self._prev_gripper_button = gripper_button
+        self._prev_button = button
 
-        should_stop = bool(dhd.getButton(0)) if self._gripper_button_index != 0 else False
-        return (
-            dpos * self._translation_scale,
-            drot * self._rotation_scale,
-            self._gripper_closed,
-            should_stop,
-        )
+        if self._anchor is None:
+            self._anchor = (pos, rot, self.ee_pos.copy(), self.ee_rot.copy())
+        dev_pos0, dev_rot0, ee_pos0, ee_rot0 = self._anchor
+
+        M = self._map
+        target_pos = ee_pos0 + self._translation_scale * M @ (pos - dev_pos0)
+
+        # Handle rotation since startup, expressed in the robot base frame, applied to the
+        # startup end-effector orientation.
+        d_rot = M @ (rot @ dev_rot0.T) @ M.T
+        d_aa = T.quat2axisangle(T.mat2quat(d_rot)) * self._rotation_scale
+        target_rot = T.quat2mat(T.axisangle2quat(d_aa)) @ ee_rot0
+
+        dpos = target_pos - self.ee_pos
+        drot = T.quat2axisangle(T.mat2quat(target_rot @ self.ee_rot.T))
+        return dpos, drot, self._gripper_closed, False
 
     def destroy_node(self):
-        self._dhd.close(self._device_id)
+        self._haptics.close()
         super().destroy_node()
+
+
+class _StdoutLogger:
+    # The ROS node (and its logger) only exists after super().__init__, which needs the
+    # device to be open already.
+    def info(self, msg: str) -> None:
+        print(f"[omega6] {msg}", flush=True)
 
 
 @dataclass
 class Args:
     side: str = "left"  # left, right, sim_left, sim_right
     control_freq: float = 20.0
+    # Robot metres per handle metre / robot radians per handle radian.
     translation_scale: float = 1.0
     rotation_scale: float = 1.0
+    # Max end-effector step per control tick -> max speed = limit * control_freq.
+    ik_pos_limit: float = 0.02
+    ik_ori_limit: float = 0.05
     gripper_button_index: int = 0
+    # False: operator stands behind the robot, looking the same way it does.
+    operator_facing_robot: bool = False
+    haptic_rate: float = 1000.0
 
 
 def main(args: Args) -> None:
@@ -139,11 +205,15 @@ def main(args: Args) -> None:
 
     leader = _Omega6CartesianLeader(
         gripper_button_index=args.gripper_button_index,
+        translation_scale=args.translation_scale,
+        rotation_scale=args.rotation_scale,
+        operator_facing_robot=args.operator_facing_robot,
+        haptic_rate=args.haptic_rate,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,
-        translation_scale=args.translation_scale,
-        rotation_scale=args.rotation_scale,
+        ik_pos_limit=args.ik_pos_limit,
+        ik_ori_limit=args.ik_ori_limit,
         node_name=f"omega6_leader_{args.side}",
     )
     spin(leader)

@@ -19,5 +19,8 @@ raw_data
 # misc
 .vscode/
 
+# proprietary Force Dimension SDK (see Dockerfile FDSDK)
+third_party/forcedimension_sdk/
+
 /*.AppImage
 /*.run

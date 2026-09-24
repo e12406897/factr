@@ -143,6 +143,11 @@ RUN apt-get update && \
         libusb-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Force Dimension SDK (Omega.6 leader, launch/omega6_teleop.py): proprietary, so it is
+# not downloaded here -- extract it into the mounted workspace at this path.
+# forcedimension-core looks for $FDSDK/lib/release/lin-x86_64-gcc/libdrd.so.*
+ENV FDSDK=/factr/third_party/forcedimension_sdk
+
 # ============================================================
 # EGL vendor (ICD) registration for the NVIDIA driver
 # ============================================================

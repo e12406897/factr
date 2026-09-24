@@ -101,7 +101,8 @@ class CartesianLeader(Node, ABC):
 
     @abstractmethod
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-        """Called once per control tick.
+        """Called once per control tick. `self.ee_pos` / `self.ee_rot` hold the follower's
+        current grip-site pose (base frame) at that point, for absolute-pose devices.
 
         Returns:
             dpos: (3,) end-effector position delta for this step, world/base frame [m]
@@ -116,9 +117,18 @@ class CartesianLeader(Node, ABC):
     def _follower_q(self) -> np.ndarray:
         return np.array(self._state_sub.message[: self._num_arm_joints], dtype=np.float64)
 
+    def _update_kinematics(self, q: np.ndarray) -> None:
+        m, d = self._mj_model, self._mj_data
+        d.qpos[self._qpos_ids] = q
+        mujoco.mj_kinematics(m, d)
+        mujoco.mj_comPos(m, d)
+        self.ee_pos = d.site_xpos[self._site_id].copy()
+        self.ee_rot = d.site_xmat[self._site_id].reshape(3, 3).copy()
+
     def _compute_joint_positions(
         self, q: np.ndarray, dpos: np.ndarray, drot: np.ndarray
     ) -> np.ndarray:
+        """Expects _update_kinematics(q) to have been called for this q."""
         # --- IK_POSE._clip_ik_input ---
         if dpos.any():
             dpos, _ = T.clip_translation(dpos, self._ik_pos_limit)
@@ -128,9 +138,6 @@ class CartesianLeader(Node, ABC):
 
         # --- IK_POSE.compute_joint_positions (single site, delta) ---
         m, d = self._mj_model, self._mj_data
-        d.qpos[self._qpos_ids] = q
-        mujoco.mj_kinematics(m, d)
-        mujoco.mj_comPos(m, d)
 
         twist = np.zeros(6)
         error_quat = np.zeros(4)
@@ -155,6 +162,8 @@ class CartesianLeader(Node, ABC):
         return q + dq * self.INTEGRATION_DT
 
     def _control_loop_callback(self) -> None:
+        q = self._follower_q()
+        self._update_kinematics(q)
         dpos, drot, grasp, should_stop = self.read_device()
         if should_stop:
             self.get_logger().info(f"CartesianLeader '{self.name}': stop requested.")
@@ -162,7 +171,7 @@ class CartesianLeader(Node, ABC):
             return
 
         q_des = self._compute_joint_positions(
-            self._follower_q(), np.asarray(dpos, dtype=np.float64), np.asarray(drot, dtype=np.float64)
+            q, np.asarray(dpos, dtype=np.float64), np.asarray(drot, dtype=np.float64)
         )
         self._cmd_pub.send_message(q_des)
 
