@@ -60,23 +60,17 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         self._gripper_button_index = gripper_button_index
         self._prev_gripper_button = False
 
-        # pyspacemouse's API is module-level, not an object handle: open() returns a
-        # bool (device opened or not) and reading happens via the module-level
-        # pyspacemouse.read(), not a method on open()'s return value. Calling
-        # `.read()` on that bool is what silently killed all motion before -- rclpy
-        # logs (but doesn't crash on) exceptions raised inside a timer callback, so
-        # this failed on every single tick without ever stopping the node.
-        opened = pyspacemouse.open()
-        if not opened:
+        self._device = pyspacemouse.open()
+        if self._device is None:
             raise RuntimeError(
-                "pyspacemouse.open() failed -- SpaceMouse not found or no "
+                "pyspacemouse.open() returned None -- SpaceMouse not found or no "
                 "permission to read the HID device (see the package's "
                 "troubleshooting.md for the udev rule needed on Linux)."
             )
         super().__init__(**kwargs)
 
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-        state = self._pyspacemouse.read()
+        state = self._device.read()
         axes = np.array(
             [state.x, state.y, state.z, state.roll, state.pitch, state.yaw]
         )
