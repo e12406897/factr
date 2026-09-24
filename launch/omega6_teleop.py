@@ -56,9 +56,9 @@ _ZMQ_ADDRESSES = {
     "sim_right": franka_sim_right_zmq_addresses,
 }
 
-# Omega frame: x toward the operator, y to the operator's right, z up. With the operator
-# behind the robot (looking along robot +x), robot base = (-x, -y, z).
-_OMEGA_TO_BASE = np.diag([-1.0, -1.0, 1.0])
+# Omega frame: x toward the operator, y to the operator's right, z up. The operator faces
+# the robot (robot +x points toward the operator), so both frames are aligned.
+_OMEGA_TO_BASE = np.eye(3)
 
 
 def _ensure_libdrd_findable(logger) -> None:
