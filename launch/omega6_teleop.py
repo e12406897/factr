@@ -55,11 +55,14 @@ _ZMQ_ADDRESSES = {
     "sim_right": franka_sim_right_zmq_addresses,
 }
 
-# Omega frame: x toward the operator, y to the operator's right, z up.
-# Operator behind the robot (looking along robot +x): robot = (-x, -y, z).
-_OMEGA_TO_BASE_BEHIND = np.diag([-1.0, -1.0, 1.0])
-# Operator facing the robot (robot +x points at the operator): frames coincide.
-_OMEGA_TO_BASE_FACING = np.eye(3)
+def _omega_to_base(operator_yaw_deg: float) -> np.ndarray:
+    """Omega frame: x toward the operator, y to the operator's right, z up.
+    operator_yaw_deg = direction the operator looks in, measured from robot +x about +z:
+    0 = standing behind the robot, 180 = facing it, 90 = looking along robot +y."""
+    behind = np.diag([-1.0, -1.0, 1.0])  # operator forward (-x_omega) -> robot +x
+    yaw = np.deg2rad(operator_yaw_deg)
+    c, s = np.cos(yaw), np.sin(yaw)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]) @ behind
 
 
 def _ensure_libdrd_findable(logger) -> None:
@@ -173,13 +176,13 @@ class _Omega6CartesianLeader(CartesianLeader):
         gripper_button_index: int,
         translation_scale: float,
         rotation_scale: float,
-        operator_facing_robot: bool,
+        operator_yaw_deg: float,
         haptic_rate: float,
         **kwargs,
     ):
         self._translation_scale = translation_scale
         self._rotation_scale = rotation_scale
-        self._map = _OMEGA_TO_BASE_FACING if operator_facing_robot else _OMEGA_TO_BASE_BEHIND
+        self._map = _omega_to_base(operator_yaw_deg)
         self._prev_button = False
         self._gripper_closed = False
         self._anchor = None  # (dev_pos0, dev_rot0, ee_pos0, ee_rot0), set on first tick
@@ -236,8 +239,9 @@ class Args:
     ik_pos_limit: float = 0.02
     ik_ori_limit: float = 0.05
     gripper_button_index: int = 0
-    # False: operator stands behind the robot, looking the same way it does.
-    operator_facing_robot: bool = False
+    # Direction the operator looks in, from robot +x about +z [deg]:
+    # 0 = behind the robot, 180 = facing it, +-90 = beside it.
+    operator_yaw_deg: float = 0.0
     haptic_rate: float = 1000.0
 
 
@@ -249,7 +253,7 @@ def main(args: Args) -> None:
         gripper_button_index=args.gripper_button_index,
         translation_scale=args.translation_scale,
         rotation_scale=args.rotation_scale,
-        operator_facing_robot=args.operator_facing_robot,
+        operator_yaw_deg=args.operator_yaw_deg,
         haptic_rate=args.haptic_rate,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],

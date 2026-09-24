@@ -92,8 +92,14 @@ def _find_spacemouse(hid_module, device_path: str = ""):
 
 class _SpaceMouseCartesianLeader(CartesianLeader):
     def __init__(
-        self, pos_sensitivity: float, rot_sensitivity: float, device_path: str, **kwargs
+        self,
+        pos_sensitivity: float,
+        rot_sensitivity: float,
+        device_path: str,
+        mirror_actions: bool,
+        **kwargs,
     ):
+        self._mirror_actions = mirror_actions
         # Imported from the submodule directly: robosuite.devices swallows the ImportError
         # (e.g. missing `hid`) and just prints a warning.
         import robosuite.devices.spacemouse as rs_spacemouse
@@ -128,9 +134,14 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
             self._device.start_control()
             return np.zeros(3), np.zeros(3), self._gripper_closed, False
 
-        # --- robosuite Device.input2action (mirror_actions=False) ---
+        # --- robosuite Device.input2action ---
         dpos = state["dpos"]
         raw_drotation = state["raw_drotation"]
+        if self._mirror_actions:
+            dpos[0] *= -1
+            dpos[1] *= -1
+            raw_drotation[0] *= -1
+            raw_drotation[1] *= -1
         drotation = raw_drotation[[1, 0, 2]]
         drotation[2] = -drotation[2]
         dpos, drotation = self._device._postprocess_device_outputs(dpos, drotation)
@@ -150,6 +161,9 @@ class Args:
     # ik_pos_limit * control_freq [m/s] and ik_ori_limit * control_freq [rad/s].
     ik_pos_limit: float = 0.02
     ik_ori_limit: float = 0.05
+    # robosuite's mapping assumes you FACE the robot; set this when standing behind it
+    # (looking the same way the robot does) -- flips x/y like robosuite's mirror_actions.
+    mirror_actions: bool = False
     # e.g. /dev/hidraw3 -- only needed if the auto-detected device/interface is wrong
     device_path: str = ""
 
@@ -162,6 +176,7 @@ def main(args: Args) -> None:
         pos_sensitivity=args.pos_sensitivity,
         rot_sensitivity=args.rot_sensitivity,
         device_path=args.device_path,
+        mirror_actions=args.mirror_actions,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,

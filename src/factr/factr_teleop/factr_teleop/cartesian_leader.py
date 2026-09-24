@@ -55,6 +55,9 @@ class CartesianLeader(Node, ABC):
         control_freq: float = 20.0,  # robosuite's default policy/control_freq
         ik_pos_limit: float = 0.02,
         ik_ori_limit: float = 0.05,
+        # Resync the commanded joints to the measured ones if any joint lags further
+        # behind than this [rad] (e.g. the robot is blocked by contact).
+        max_joint_deviation: float = 0.3,
         node_name: str = "cartesian_leader",
     ):
         super().__init__(node_name)
@@ -62,6 +65,7 @@ class CartesianLeader(Node, ABC):
         self._num_arm_joints = num_arm_joints
         self._ik_pos_limit = ik_pos_limit
         self._ik_ori_limit = ik_ori_limit
+        self._max_joint_deviation = max_joint_deviation
 
         self._mj_model, joint_names, site_name = _build_robosuite_panda()
         self._mj_data = mujoco.MjData(self._mj_model)
@@ -74,9 +78,11 @@ class CartesianLeader(Node, ABC):
             f"src/factr/factr_teleop/factr_teleop/configs/franka_{name}.yaml",
         )
         with open(config_path, "r") as f:
-            self._gripper_open_cmd = float(
-                yaml.safe_load(f)["gripper_teleop"]["actuation_range"]
-            )
+            config = yaml.safe_load(f)
+        self._gripper_open_cmd = float(config["gripper_teleop"]["actuation_range"])
+        margin = config["arm_teleop"]["arm_joint_limits_safety_margin"]
+        self._q_min = np.array(config["arm_teleop"]["arm_joint_limits_min"]) + margin
+        self._q_max = np.array(config["arm_teleop"]["arm_joint_limits_max"]) - margin
 
         self._state_sub = ZMQSubscriber(zmq_addresses["joint_state_sub"])
         self.get_logger().info(
@@ -87,6 +93,11 @@ class CartesianLeader(Node, ABC):
             time.sleep(0.1)
         # Null-space posture target (robosuite's `initial_joint`): where the follower starts.
         self._q0 = self._follower_q()
+        # The IK integrates on the leader's own commanded joints (like the exoskeleton
+        # sends absolute joint targets), NOT on the measured follower joints: those lag
+        # the command, so re-solving from them every tick throws most of each step away
+        # (slow, sluggish tracking on the real robot).
+        self._q_cmd = self._q0.copy()
 
         self._cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
         self._gripper_pub = self.create_publisher(
@@ -101,8 +112,8 @@ class CartesianLeader(Node, ABC):
 
     @abstractmethod
     def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-        """Called once per control tick. `self.ee_pos` / `self.ee_rot` hold the follower's
-        current grip-site pose (base frame) at that point, for absolute-pose devices.
+        """Called once per control tick. `self.ee_pos` / `self.ee_rot` hold the currently
+        commanded grip-site pose (base frame) at that point, for absolute-pose devices.
 
         Returns:
             dpos: (3,) end-effector position delta for this step, world/base frame [m]
@@ -162,8 +173,16 @@ class CartesianLeader(Node, ABC):
         return q + dq * self.INTEGRATION_DT
 
     def _control_loop_callback(self) -> None:
-        q = self._follower_q()
-        self._update_kinematics(q)
+        q_meas = self._follower_q()
+        if np.max(np.abs(self._q_cmd - q_meas)) > self._max_joint_deviation:
+            self.get_logger().warn(
+                "Follower is lagging too far behind the command -- resyncing to its "
+                "measured joints.",
+                throttle_duration_sec=1.0,
+            )
+            self._q_cmd = q_meas
+
+        self._update_kinematics(self._q_cmd)
         dpos, drot, grasp, should_stop = self.read_device()
         if should_stop:
             self.get_logger().info(f"CartesianLeader '{self.name}': stop requested.")
@@ -171,9 +190,12 @@ class CartesianLeader(Node, ABC):
             return
 
         q_des = self._compute_joint_positions(
-            q, np.asarray(dpos, dtype=np.float64), np.asarray(drot, dtype=np.float64)
+            self._q_cmd,
+            np.asarray(dpos, dtype=np.float64),
+            np.asarray(drot, dtype=np.float64),
         )
-        self._cmd_pub.send_message(q_des)
+        self._q_cmd = np.clip(q_des, self._q_min, self._q_max)
+        self._cmd_pub.send_message(self._q_cmd)
 
         # Every tick (like FACTRTeleop); the followers only act on state changes.
         msg = JointState()
