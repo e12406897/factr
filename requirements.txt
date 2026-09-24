@@ -18,6 +18,7 @@ protobuf==7.35.1
 PyOpenGL==3.1.10
 pyparsing==3.3.2
 pyserial==3.5
+pyspacemouse
 pyzmq==27.1.0
 requests==2.34.2
 robosuite==1.5.2
