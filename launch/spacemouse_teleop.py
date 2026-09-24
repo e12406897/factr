@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from typing import Tuple
 
 import numpy as np
+import robosuite.utils.transform_utils as T
 import tyro
 
 _SRC_FACTR = Path(__file__).parent.parent / "src" / "factr"
@@ -96,10 +97,14 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         pos_sensitivity: float,
         rot_sensitivity: float,
         device_path: str,
-        mirror_actions: bool,
         **kwargs,
     ):
-        self._mirror_actions = mirror_actions
+        # Same per-step limits as the leader's IK clip, so the accumulated target never
+        # runs ahead of what the robot is commanded to do.
+        self._step_pos_limit = kwargs["ik_pos_limit"]
+        self._step_ori_limit = kwargs["ik_ori_limit"]
+        self._pos_offset = np.zeros(3)
+        self._rot_offset = np.eye(3)
         # Imported from the submodule directly: robosuite.devices swallows the ImportError
         # (e.g. missing `hid`) and just prints a warning.
         import robosuite.devices.spacemouse as rs_spacemouse
@@ -123,7 +128,7 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         self._gripper_closed = False
         super().__init__(**kwargs)
 
-    def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
+    def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool]:
         state = self._device.get_controller_state()
         # Latched gripper: left button closes, right button opens (robosuite's driver
         # reports the right button as "reset", which also disables it -> re-enable).
@@ -132,23 +137,25 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         if state["reset"]:
             self._gripper_closed = False
             self._device.start_control()
-            return np.zeros(3), np.zeros(3), self._gripper_closed, False
+            return self._pos_offset, self._rot_offset, self._gripper_closed
 
-        # --- robosuite Device.input2action ---
+        # --- robosuite Device.input2action (its default mapping, mirror_actions=False) ---
         dpos = state["dpos"]
         raw_drotation = state["raw_drotation"]
-        if self._mirror_actions:
-            dpos[0] *= -1
-            dpos[1] *= -1
-            raw_drotation[0] *= -1
-            raw_drotation[1] *= -1
         drotation = raw_drotation[[1, 0, 2]]
         drotation[2] = -drotation[2]
         dpos, drotation = self._device._postprocess_device_outputs(dpos, drotation)
         dpos = np.clip(dpos, -1, 1)
         drotation = np.clip(drotation, -1, 1)
 
-        return dpos, drotation, self._gripper_closed, False
+        # --- robosuite IK_POSE._clip_ik_input, then accumulate (rate device -> pose) ---
+        if dpos.any():
+            dpos, _ = T.clip_translation(dpos, self._step_pos_limit)
+        quat, _ = T.clip_rotation(T.axisangle2quat(drotation), self._step_ori_limit)
+        self._pos_offset = self._pos_offset + dpos
+        self._rot_offset = T.quat2mat(quat) @ self._rot_offset
+
+        return self._pos_offset, self._rot_offset, self._gripper_closed
 
 
 @dataclass
@@ -161,9 +168,6 @@ class Args:
     # ik_pos_limit * control_freq [m/s] and ik_ori_limit * control_freq [rad/s].
     ik_pos_limit: float = 0.02
     ik_ori_limit: float = 0.05
-    # robosuite's mapping assumes you FACE the robot; set this when standing behind it
-    # (looking the same way the robot does) -- flips x/y like robosuite's mirror_actions.
-    mirror_actions: bool = False
     # e.g. /dev/hidraw3 -- only needed if the auto-detected device/interface is wrong
     device_path: str = ""
 
@@ -176,7 +180,6 @@ def main(args: Args) -> None:
         pos_sensitivity=args.pos_sensitivity,
         rot_sensitivity=args.rot_sensitivity,
         device_path=args.device_path,
-        mirror_actions=args.mirror_actions,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,

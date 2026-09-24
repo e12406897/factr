@@ -15,9 +15,10 @@ Prerequisites:
         SUBSYSTEM=="usb", ATTRS{idVendor}=="1451", MODE="0666"
     (check the vendor ID with `lsusb`).
 
-Startup: if the device isn't calibrated yet, it moves by itself (drd.autoInit) -- keep
-hands off the handle until "ready" is logged. Afterwards the SDK's gravity compensation
-holds the handle, and button 0 toggles the gripper.
+Startup: the handle moves by itself (calibration via drd.autoInit if needed, then to its
+home at the workspace centre, where it is held) -- keep hands off until "ready" is
+logged. At that moment the handle is released (gravity compensation keeps it floating)
+and its home is matched to the follower's current pose. Button 0 toggles the gripper.
 
 Usage:
     python3 launch/omega6_teleop.py --side left
@@ -55,14 +56,9 @@ _ZMQ_ADDRESSES = {
     "sim_right": franka_sim_right_zmq_addresses,
 }
 
-def _omega_to_base(operator_yaw_deg: float) -> np.ndarray:
-    """Omega frame: x toward the operator, y to the operator's right, z up.
-    operator_yaw_deg = direction the operator looks in, measured from robot +x about +z:
-    0 = standing behind the robot, 180 = facing it, 90 = looking along robot +y."""
-    behind = np.diag([-1.0, -1.0, 1.0])  # operator forward (-x_omega) -> robot +x
-    yaw = np.deg2rad(operator_yaw_deg)
-    c, s = np.cos(yaw), np.sin(yaw)
-    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]) @ behind
+# Omega frame: x toward the operator, y to the operator's right, z up. With the operator
+# behind the robot (looking along robot +x), robot base = (-x, -y, z).
+_OMEGA_TO_BASE = np.diag([-1.0, -1.0, 1.0])
 
 
 def _ensure_libdrd_findable(logger) -> None:
@@ -107,9 +103,10 @@ def _ensure_libdrd_findable(logger) -> None:
 
 
 class _OmegaHaptics:
-    """Owns all SDK calls. A ~1 kHz thread keeps sending zero force (the SDK adds gravity
-    compensation on top) so the handle floats, and caches pose + button for the 20 Hz
-    control loop."""
+    """Owns all SDK calls. Until release(), the device's own regulation holds the handle
+    at the workspace centre (its home). After release(), a ~1 kHz thread keeps sending
+    zero force (the SDK adds gravity compensation on top) so the handle floats, and caches
+    pose + button for the 20 Hz control loop."""
 
     def __init__(self, button_index: int, rate_hz: float, logger):
         _ensure_libdrd_findable(logger)
@@ -118,6 +115,7 @@ class _OmegaHaptics:
         self._dhd, self._drd = dhd, drd
         self._button_index = button_index
         self._period = 1.0 / rate_hz
+        self._thread = None
 
         if drd.open() < 0:
             raise RuntimeError(f"drd.open() failed: {dhd.errorGetLastStr()}")
@@ -127,21 +125,30 @@ class _OmegaHaptics:
             logger.info("Device not calibrated -- running drd.autoInit(), hands off the handle ...")
             if drd.autoInit() < 0:
                 raise RuntimeError(f"drd.autoInit() failed: {dhd.errorGetLastStr()}")
-        # Stop the DRD regulation thread but keep forces on, then drive forces via DHD.
-        drd.stop(True)
-        dhd.setGravityCompensation(True)
-        if dhd.enableForce(True) < 0:
-            raise RuntimeError(f"dhd.enableForce() failed: {dhd.errorGetLastStr()}")
+        if drd.start() < 0:
+            raise RuntimeError(f"drd.start() failed: {dhd.errorGetLastStr()}")
+        logger.info("Moving the handle to its home (workspace centre) ...")
+        if drd.moveToPos((0.0, 0.0, 0.0), True) < 0:
+            raise RuntimeError(f"drd.moveToPos() failed: {dhd.errorGetLastStr()}")
 
         self._lock = threading.Lock()
         self._pos = None
         self._rot = None
         self._button = False
         self._running = True
+
+    def release(self) -> None:
+        """Hand the handle over to the operator: stop holding it at home, keep forces on
+        for gravity compensation, and start streaming its pose."""
+        dhd, drd = self._dhd, self._drd
+        drd.stop(True)
+        dhd.setGravityCompensation(True)
+        if dhd.enableForce(True) < 0:
+            raise RuntimeError(f"dhd.enableForce() failed: {dhd.errorGetLastStr()}")
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         while self._pos is None:
-            time.sleep(0.01)
+            time.sleep(0.001)
 
     def _run(self) -> None:
         dhd = self._dhd
@@ -165,7 +172,10 @@ class _OmegaHaptics:
 
     def close(self) -> None:
         self._running = False
-        self._thread.join(timeout=1.0)
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        else:
+            self._drd.stop(False)
         self._dhd.enableForce(False)
         self._drd.close()
 
@@ -176,45 +186,40 @@ class _Omega6CartesianLeader(CartesianLeader):
         gripper_button_index: int,
         translation_scale: float,
         rotation_scale: float,
-        operator_yaw_deg: float,
         haptic_rate: float,
         **kwargs,
     ):
         self._translation_scale = translation_scale
         self._rotation_scale = rotation_scale
-        self._map = _omega_to_base(operator_yaw_deg)
         self._prev_button = False
         self._gripper_closed = False
-        self._anchor = None  # (dev_pos0, dev_rot0, ee_pos0, ee_rot0), set on first tick
+        self._home = None  # handle (pos, rot) when teleop started
 
         self._haptics = _OmegaHaptics(
             gripper_button_index, haptic_rate, logger=_StdoutLogger()
         )
         super().__init__(**kwargs)
 
-    def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
+    def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool]:
+        if self._home is None:
+            # Teleop starts now: release the handle from its home and zero on it there.
+            self._haptics.release()
+            pos, rot, self._prev_button = self._haptics.latest()
+            self._home = (pos, rot)
         pos, rot, button = self._haptics.latest()
 
         if button and not self._prev_button:
             self._gripper_closed = not self._gripper_closed
         self._prev_button = button
 
-        if self._anchor is None:
-            self._anchor = (pos, rot, self.ee_pos.copy(), self.ee_rot.copy())
-        dev_pos0, dev_rot0, ee_pos0, ee_rot0 = self._anchor
-
-        M = self._map
-        target_pos = ee_pos0 + self._translation_scale * M @ (pos - dev_pos0)
-
-        # Handle rotation since startup, expressed in the robot base frame, applied to the
-        # startup end-effector orientation.
-        d_rot = M @ (rot @ dev_rot0.T) @ M.T
+        home_pos, home_rot = self._home
+        M = _OMEGA_TO_BASE
+        pos_offset = self._translation_scale * M @ (pos - home_pos)
+        # Handle rotation since home, expressed in the robot base frame.
+        d_rot = M @ (rot @ home_rot.T) @ M.T
         d_aa = T.quat2axisangle(T.mat2quat(d_rot)) * self._rotation_scale
-        target_rot = T.quat2mat(T.axisangle2quat(d_aa)) @ ee_rot0
-
-        dpos = target_pos - self.ee_pos
-        drot = T.quat2axisangle(T.mat2quat(target_rot @ self.ee_rot.T))
-        return dpos, drot, self._gripper_closed, False
+        rot_offset = T.quat2mat(T.axisangle2quat(d_aa))
+        return pos_offset, rot_offset, self._gripper_closed
 
     def destroy_node(self):
         self._haptics.close()
@@ -239,9 +244,6 @@ class Args:
     ik_pos_limit: float = 0.02
     ik_ori_limit: float = 0.05
     gripper_button_index: int = 0
-    # Direction the operator looks in, from robot +x about +z [deg]:
-    # 0 = behind the robot, 180 = facing it, +-90 = beside it.
-    operator_yaw_deg: float = 0.0
     haptic_rate: float = 1000.0
 
 
@@ -253,7 +255,6 @@ def main(args: Args) -> None:
         gripper_button_index=args.gripper_button_index,
         translation_scale=args.translation_scale,
         rotation_scale=args.rotation_scale,
-        operator_yaw_deg=args.operator_yaw_deg,
         haptic_rate=args.haptic_rate,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],

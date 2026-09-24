@@ -2,10 +2,11 @@
 by publishing joint targets on the same `joint_pos_cmd_pub` ZMQ channel FACTRTeleop uses
 (franka_ros2 v0.1.0 has no Cartesian controller, so IK has to happen leader-side).
 
-The IK step is a copy of robosuite 1.5.2's IK_POSE controller
-(robosuite/controllers/parts/arm/ik.py: _clip_ik_input + compute_joint_positions),
-evaluated on robosuite's own Panda + PandaGripper MuJoCo model, with the follower's live
-joint state standing in for robosuite's `sim.data.qpos`.
+Every device reports the same thing: the end-effector pose it commands RELATIVE TO WHERE
+TELEOP STARTED, in the robot base frame. The leader anchors that offset at the follower's
+pose at startup (so nothing moves until the device does), and tracks the resulting target
+with a copy of robosuite 1.5.2's IK_POSE step (robosuite/controllers/parts/arm/ik.py:
+_clip_ik_input + compute_joint_positions) on robosuite's own Panda + PandaGripper model.
 """
 import os
 import time
@@ -53,6 +54,7 @@ class CartesianLeader(Node, ABC):
         zmq_addresses: dict,
         num_arm_joints: int = 7,
         control_freq: float = 20.0,  # robosuite's default policy/control_freq
+        # Max end-effector step per tick -> max speed = limit * control_freq.
         ik_pos_limit: float = 0.02,
         ik_ori_limit: float = 0.05,
         # Resync the commanded joints to the measured ones if any joint lags further
@@ -81,8 +83,8 @@ class CartesianLeader(Node, ABC):
             config = yaml.safe_load(f)
         self._gripper_open_cmd = float(config["gripper_teleop"]["actuation_range"])
         margin = config["arm_teleop"]["arm_joint_limits_safety_margin"]
-        self._q_min = np.array(config["arm_teleop"]["arm_joint_limits_min"]) + margin
-        self._q_max = np.array(config["arm_teleop"]["arm_joint_limits_max"]) - margin
+        q_min = np.array(config["arm_teleop"]["arm_joint_limits_min"]) + margin
+        q_max = np.array(config["arm_teleop"]["arm_joint_limits_max"]) - margin
 
         self._state_sub = ZMQSubscriber(zmq_addresses["joint_state_sub"])
         self.get_logger().info(
@@ -94,10 +96,17 @@ class CartesianLeader(Node, ABC):
         # Null-space posture target (robosuite's `initial_joint`): where the follower starts.
         self._q0 = self._follower_q()
         # The IK integrates on the leader's own commanded joints (like the exoskeleton
-        # sends absolute joint targets), NOT on the measured follower joints: those lag
-        # the command, so re-solving from them every tick throws most of each step away
-        # (slow, sluggish tracking on the real robot).
+        # sends absolute joint targets), not on the lagging measured ones.
         self._q_cmd = self._q0.copy()
+        # Never command further outside the limits, but don't yank a start pose that
+        # already is slightly outside (that would be the first thing the robot does).
+        self._q_min = np.minimum(q_min, self._q0)
+        self._q_max = np.maximum(q_max, self._q0)
+
+        # Home: the follower's pose at startup; device offsets are applied to it.
+        self._update_kinematics(self._q0)
+        self._home_pos = self._ee_pos.copy()
+        self._home_rot = self._ee_rot.copy()
 
         self._cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
         self._gripper_pub = self.create_publisher(
@@ -111,17 +120,16 @@ class CartesianLeader(Node, ABC):
         self._timer = self.create_timer(1.0 / control_freq, self._control_loop_callback)
 
     @abstractmethod
-    def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-        """Called once per control tick. `self.ee_pos` / `self.ee_rot` hold the currently
-        commanded grip-site pose (base frame) at that point, for absolute-pose devices.
+    def read_device(self) -> Tuple[np.ndarray, np.ndarray, bool]:
+        """Called once per control tick. The first call marks the start of teleop.
 
-        Returns:
-            dpos: (3,) end-effector position delta for this step, world/base frame [m]
-                (robosuite IK_POSE action[:3]; clipped to ik_pos_limit here).
-            drot: (3,) axis-angle rotation delta for this step [rad]
-                (robosuite IK_POSE action[3:]; clipped to ik_ori_limit here).
+        Returns, all in the ROBOT BASE frame:
+            pos_offset: (3,) commanded end-effector translation since teleop start [m]
+                (zero on the first call).
+            rot_offset: (3, 3) commanded end-effector rotation since teleop start, applied
+                in the base frame (target_rot = rot_offset @ start_rot; identity on the
+                first call).
             grasp: True = gripper should be closed.
-            should_stop: True to request shutdown.
         """
         raise NotImplementedError
 
@@ -133,8 +141,8 @@ class CartesianLeader(Node, ABC):
         d.qpos[self._qpos_ids] = q
         mujoco.mj_kinematics(m, d)
         mujoco.mj_comPos(m, d)
-        self.ee_pos = d.site_xpos[self._site_id].copy()
-        self.ee_rot = d.site_xmat[self._site_id].reshape(3, 3).copy()
+        self._ee_pos = d.site_xpos[self._site_id].copy()
+        self._ee_rot = d.site_xmat[self._site_id].reshape(3, 3).copy()
 
     def _compute_joint_positions(
         self, q: np.ndarray, dpos: np.ndarray, drot: np.ndarray
@@ -183,17 +191,14 @@ class CartesianLeader(Node, ABC):
             self._q_cmd = q_meas
 
         self._update_kinematics(self._q_cmd)
-        dpos, drot, grasp, should_stop = self.read_device()
-        if should_stop:
-            self.get_logger().info(f"CartesianLeader '{self.name}': stop requested.")
-            self._timer.cancel()
-            return
+        pos_offset, rot_offset, grasp = self.read_device()
 
-        q_des = self._compute_joint_positions(
-            self._q_cmd,
-            np.asarray(dpos, dtype=np.float64),
-            np.asarray(drot, dtype=np.float64),
-        )
+        target_pos = self._home_pos + pos_offset
+        target_rot = rot_offset @ self._home_rot
+        dpos = target_pos - self._ee_pos
+        drot = T.quat2axisangle(T.mat2quat(target_rot @ self._ee_rot.T))
+
+        q_des = self._compute_joint_positions(self._q_cmd, dpos, drot)
         self._q_cmd = np.clip(q_des, self._q_min, self._q_max)
         self._cmd_pub.send_message(self._q_cmd)
 
