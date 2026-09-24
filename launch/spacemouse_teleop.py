@@ -45,16 +45,71 @@ _ZMQ_ADDRESSES = {
 }
 
 
+_3DCONNEXION_VENDOR_ID = 0x256F
+_LOGITECH_VENDOR_ID = 0x046D  # older 3Dconnexion devices were sold under Logitech's ID
+
+
+def _hid_backend():
+    # hidapi's `hid` module uses the libusb backend on Linux; `hidraw` (same API, same
+    # package) goes through /dev/hidraw* like pyspacemouse did.
+    try:
+        import hidraw
+
+        return hidraw
+    except ImportError:
+        import hid
+
+        return hid
+
+
+def _find_spacemouse(hid_module, device_path: str = ""):
+    devices = hid_module.enumerate()
+    if device_path:
+        matches = [d for d in devices if d["path"] == device_path.encode()]
+    else:
+        matches = [
+            d
+            for d in devices
+            if d["vendor_id"] == _3DCONNEXION_VENDOR_ID
+            or (
+                d["vendor_id"] == _LOGITECH_VENDOR_ID
+                and "3dconnexion"
+                in f"{d.get('manufacturer_string')} {d.get('product_string')}".lower()
+            )
+        ]
+    if not matches:
+        listing = "\n".join(
+            f"  {d['vendor_id']:04x}:{d['product_id']:04x} {d['path']} "
+            f"{d.get('manufacturer_string')!r} {d.get('product_string')!r}"
+            for d in devices
+        )
+        raise RuntimeError(
+            "No 3Dconnexion device found via "
+            f"{hid_module.__name__}. Visible HID devices:\n{listing or '  (none)'}"
+        )
+    return sorted(matches, key=lambda d: d.get("interface_number", 0))[0]
+
+
 class _SpaceMouseCartesianLeader(CartesianLeader):
-    def __init__(self, pos_sensitivity: float, rot_sensitivity: float, **kwargs):
+    def __init__(
+        self, pos_sensitivity: float, rot_sensitivity: float, device_path: str, **kwargs
+    ):
         # Imported from the submodule directly: robosuite.devices swallows the ImportError
         # (e.g. missing `hid`) and just prints a warning.
-        from robosuite.devices.spacemouse import SpaceMouse
+        import robosuite.devices.spacemouse as rs_spacemouse
+
+        hid_module = _hid_backend()
+        rs_spacemouse.hid = hid_module
+        info = _find_spacemouse(hid_module, device_path)
 
         # robosuite's Device base only reads env.robots[i].arms (for multi-arm switching).
         stub_env = SimpleNamespace(robots=[SimpleNamespace(arms=["right"])])
-        self._device = SpaceMouse(
+        # Real product_id matters: robosuite parses the older model (0xc635) differently.
+        self._device = rs_spacemouse.SpaceMouse(
             env=stub_env,
+            vendor_id=info["vendor_id"],
+            product_id=info["product_id"],
+            device_path=info["path"],
             pos_sensitivity=pos_sensitivity,
             rot_sensitivity=rot_sensitivity,
         )
@@ -85,6 +140,8 @@ class Args:
     control_freq: float = 20.0
     pos_sensitivity: float = 1.0
     rot_sensitivity: float = 1.0
+    # e.g. /dev/hidraw3 -- only needed if the auto-detected device/interface is wrong
+    device_path: str = ""
 
 
 def main(args: Args) -> None:
@@ -94,6 +151,7 @@ def main(args: Args) -> None:
     leader = _SpaceMouseCartesianLeader(
         pos_sensitivity=args.pos_sensitivity,
         rot_sensitivity=args.rot_sensitivity,
+        device_path=args.device_path,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,
