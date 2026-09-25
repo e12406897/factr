@@ -12,6 +12,10 @@ Usage:
     # bimanual: ONE process driving both leaders through one shared TwoArm* env
     python3 launch/robosuite_sim.py --side both
 
+    # impedance control instead of the default joint_trajectory_controller
+    python3 launch/robosuite_sim.py --side right --controller joint_impedance_controller
+    python3 launch/robosuite_sim.py --side right --controller cartesian_impedance_controller
+
 Then start the unmodified FACTR leader(s) as usual:
     ros2 launch launch/factr_teleop.py side:=sim_left
     ros2 launch launch/factr_teleop.py side:=sim_right
@@ -60,7 +64,15 @@ class Args:
     table_offset_z: Optional[float] = None
     has_renderer: bool = True
     control_freq: int = 20
-    # JOINT_POSITION controller impedance gains.
+    # Same choice as on the real robot. The impedance controllers take their gains from
+    # src/factr/factr_controllers/config/<controller>.yaml (shared with the real robot);
+    # cartesian_impedance_controller needs a Cartesian leader (SpaceMouse / Omega.6).
+    controller: Literal[
+        "joint_trajectory_controller",
+        "joint_impedance_controller",
+        "cartesian_impedance_controller",
+    ] = "joint_trajectory_controller"
+    # joint_trajectory_controller (robosuite JOINT_POSITION) impedance gains.
     kp: float = 150.0
     damping_ratio: float = 1.0
     enable_ros_gripper: bool = True
@@ -89,6 +101,14 @@ def _read_gripper_actuation_range(config_file: str) -> float:
     return float(config["gripper_teleop"]["actuation_range"])
 
 
+def _read_controller_params(controller: str) -> dict:
+    path = os.path.join(
+        get_workspace_root(), f"src/factr/factr_controllers/config/{controller}.yaml"
+    )
+    with open(path, "r") as f:
+        return yaml.safe_load(f)["/**"]["ros__parameters"]
+
+
 def main(args: Args) -> None:
     sides = ["left", "right"] if args.side == "both" else [args.side]
     zmq_addresses, names, config_files = zip(*(_SIDE_CONFIG[s] for s in sides))
@@ -96,6 +116,16 @@ def main(args: Args) -> None:
     env_name = args.env_name
     if env_name is None:
         env_name = "TwoArmLift" if args.side == "both" else "Lift"
+
+    controller_kwargs = {}
+    if args.controller == "joint_impedance_controller":
+        p = _read_controller_params(args.controller)
+        controller_kwargs = dict(joint_k_gains=p["k_gains"], joint_d_gains=p["d_gains"])
+    elif args.controller == "cartesian_impedance_controller":
+        p = _read_controller_params(args.controller)
+        controller_kwargs = dict(
+            cartesian_stiffness=(p["translational_stiffness"], p["rotational_stiffness"])
+        )
 
     follower = RobosuiteFrankaFollower(
         zmq_addresses=list(zmq_addresses),
@@ -107,6 +137,8 @@ def main(args: Args) -> None:
         enable_ros_gripper=args.enable_ros_gripper,
         has_renderer=args.has_renderer,
         control_freq=args.control_freq,
+        controller=args.controller,
+        **controller_kwargs,
         kp=args.kp,
         damping_ratio=args.damping_ratio,
         enable_var_scale_feedback=args.enable_var_scale_feedback,

@@ -7,12 +7,26 @@ from franka_msgs.action import Grasp, Move
 from franka_msgs.msg import FrankaRobotState
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from rclpy.action import ActionClient
+from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
+from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import os
 import yaml
 from python_utils.utils import get_workspace_root
+
+# Controllers the follower can drive (see launch/start_real_robot_single_teleop.sh):
+#   joint_trajectory_controller    -> JointTrajectory on `trajectory_topic`
+#   joint_impedance_controller     -> Float64MultiArray on `joint_impedance_topic`
+#   cartesian_impedance_controller -> PoseStamped on `cartesian_impedance_topic`,
+#                                     from the leader's `ee_pose_cmd_pub` (not joint targets)
+CONTROLLERS = (
+    "joint_trajectory_controller",
+    "joint_impedance_controller",
+    "cartesian_impedance_controller",
+)
 
 
 class FrankaRos2Follower(Node):
@@ -93,7 +107,10 @@ class FrankaRos2Follower(Node):
         side: str = "left",
         save_launch: bool = False,
         num_arm_joints: int = 7,
+        controller: str = "joint_trajectory_controller",
         trajectory_topic: str = "/joint_trajectory_controller/joint_trajectory",
+        joint_impedance_topic: str = "/joint_impedance_controller/joint_target",
+        cartesian_impedance_topic: str = "/cartesian_impedance_controller/equilibrium_pose",
         robot_state_topic: str = "/franka_robot_state_broadcaster/robot_state",
         node_name: str = "factr_franka_ros2_follower",
         command_period_sec: float = 0.002,
@@ -124,17 +141,37 @@ class FrankaRos2Follower(Node):
         self._torque_sign = torque_sign
         self.ee_pos = np.zeros(3)
 
+        if controller not in CONTROLLERS:
+            raise ValueError(f"Unknown controller '{controller}', expected one of {CONTROLLERS}.")
+        self._controller = controller
         self._min_trajectory_point_duration_sec = trajectory_point_duration_sec
         self._joint_distance_threshold = joint_distance_threshold
         self._current_q: Optional[np.ndarray] = None
-        self._trajectory_pub = self.create_publisher(
-            JointTrajectory, trajectory_topic, 10
-        )
+        self._current_o_t_ee: Optional[np.ndarray] = None
+        if controller == "joint_trajectory_controller":
+            self._trajectory_pub = self.create_publisher(
+                JointTrajectory, trajectory_topic, 10
+            )
+            command_topic = trajectory_topic
+        elif controller == "joint_impedance_controller":
+            self._joint_target_pub = self.create_publisher(
+                Float64MultiArray, joint_impedance_topic, 10
+            )
+            command_topic = joint_impedance_topic
+        else:
+            self._pose_target_pub = self.create_publisher(
+                PoseStamped, cartesian_impedance_topic, 10
+            )
+            command_topic = cartesian_impedance_topic
         self._state_sub = self.create_subscription(
             FrankaRobotState, robot_state_topic, self._on_robot_state, 10
         )
 
-        self._cmd_addr = zmq_addresses["joint_pos_cmd_pub"]
+        self._cmd_addr = zmq_addresses[
+            "ee_pose_cmd_pub"
+            if controller == "cartesian_impedance_controller"
+            else "joint_pos_cmd_pub"
+        ]
         self._cmd_sub = ZMQSubscriber(self._cmd_addr)
         self._state_pub = ZMQPublisher(zmq_addresses["joint_state_sub"])
         self._torque_pub = ZMQPublisher(zmq_addresses["joint_torque_sub"])
@@ -189,7 +226,7 @@ class FrankaRos2Follower(Node):
         self.get_logger().info(
             f"Waiting for leader commands on {self._cmd_addr}, "
             f"robot state on {robot_state_topic}, "
-            f"forwarding to {trajectory_topic} ..."
+            f"forwarding to {controller} on {command_topic} ..."
         )
 
         #filter cache (one history per filtered signal)
@@ -204,6 +241,7 @@ class FrankaRos2Follower(Node):
         )
         self.ee_pos = np.array(msg.o_t_ee[-4:-1], dtype=np.float64)
         self._current_q = q
+        self._current_o_t_ee = np.array(msg.o_t_ee, dtype=np.float64)
         self._state_pub.send_message(q)
         tau_ext = self.filter_ext(tau_ext, self.ext_arm_torque_prev)
         self._torque_pub.send_message(tau_ext)
@@ -267,10 +305,18 @@ class FrankaRos2Follower(Node):
         arm_cmd = self._cmd_sub.message
         if arm_cmd is None:
             return
+        if self._controller == "cartesian_impedance_controller":
+            self._forward_pose_target(arm_cmd)
+            return
         if self.out_of_bounds():
             target_q = self._current_q
         else:
             target_q = np.array(arm_cmd[: self._num_arm_joints], dtype=np.float64)
+        if self._controller == "joint_impedance_controller":
+            self._joint_target_pub.publish(
+                Float64MultiArray(data=[float(x) for x in target_q])
+            )
+            return
         msg = JointTrajectory()
         msg.joint_names = self.JOINT_NAMES
         point = JointTrajectoryPoint()
@@ -278,6 +324,27 @@ class FrankaRos2Follower(Node):
         point.time_from_start = self._trajectory_point_duration(target_q)
         msg.points = [point]
         self._trajectory_pub.publish(msg)
+
+    def _forward_pose_target(self, o_t_ee_cmd: np.ndarray) -> None:
+        """`o_t_ee_cmd`: target O_T_EE, 4x4 flattened column-major (same layout as
+        FrankaRobotState.o_t_ee), from the leader's `ee_pose_cmd_pub`."""
+        if self.out_of_bounds():
+            if self._current_o_t_ee is None:
+                return
+            o_t_ee_cmd = self._current_o_t_ee
+        pose = np.array(o_t_ee_cmd, dtype=np.float64).reshape(4, 4, order="F")
+        qx, qy, qz, qw = Rotation.from_matrix(pose[:3, :3]).as_quat()
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "panda_link0"
+        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = (
+            float(v) for v in pose[:3, 3]
+        )
+        msg.pose.orientation.x = float(qx)
+        msg.pose.orientation.y = float(qy)
+        msg.pose.orientation.z = float(qz)
+        msg.pose.orientation.w = float(qw)
+        self._pose_target_pub.publish(msg)
 
     def _on_gripper_cmd(self, msg: JointState) -> None:
         leader_gripper_pos = float(msg.position[0])

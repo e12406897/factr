@@ -1,0 +1,18 @@
+<library path="factr_controllers">
+  <class name="factr_controllers/CartesianImpedanceController"
+         type="factr_controllers::CartesianImpedanceController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Cartesian impedance controller (franka_ros2 jazzy example, ported to v0.1.0) tracking
+      poses published on ~/equilibrium_pose.
+    </description>
+  </class>
+  <class name="factr_controllers/JointImpedanceController"
+         type="factr_controllers::JointImpedanceController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Joint impedance controller (franka_ros2 v0.1.0 example) tracking joint positions
+      published on ~/joint_target.
+    </description>
+  </class>
+</library>

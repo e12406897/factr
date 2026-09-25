@@ -1,0 +1,9 @@
+# Loaded by the spawner (-p) into the joint_impedance_controller node; the robosuite sim
+# reads the same gains for its equivalent controller.
+/**:
+  ros__parameters:
+    arm_id: panda
+    # libfranka's joint_impedance_control example gains (the v0.1.0 ROS example's
+    # 24/.../2 Nm/rad are too soft to track teleop targets).
+    k_gains: [600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0]
+    d_gains: [50.0, 50.0, 50.0, 50.0, 30.0, 25.0, 15.0]

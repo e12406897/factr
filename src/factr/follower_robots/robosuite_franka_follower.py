@@ -1,13 +1,25 @@
 import threading
 import time
 from collections import deque
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import mujoco
 import numpy as np
 import robosuite
+import robosuite.utils.transform_utils as T
 from python_utils.zmq_messenger import ZMQPublisher, ZMQSubscriber
 from robosuite.controllers import load_composite_controller_config
+
+# Same choices as the real robot (franka_ros2_follower.CONTROLLERS), mapped to robosuite:
+#   joint_trajectory_controller    -> JOINT_POSITION with `kp`/`damping_ratio`
+#   joint_impedance_controller     -> JOINT_POSITION with the joint impedance k/d gains
+#   cartesian_impedance_controller -> OSC_POSE, absolute base-frame targets from the
+#                                     leader's `ee_pose_cmd_pub`
+CONTROLLERS = (
+    "joint_trajectory_controller",
+    "joint_impedance_controller",
+    "cartesian_impedance_controller",
+)
 
 
 class _GripperROSBridge:
@@ -176,8 +188,14 @@ class RobosuiteFrankaFollower:
         enable_ros_gripper: bool = True,
         has_renderer: bool = True,
         control_freq: int = 20,
+        controller: str = "joint_trajectory_controller",
         kp: float = 150.0,
         damping_ratio: float = 1.0,
+        # joint_impedance_controller: stiffness [Nm/rad] / damping [Nms/rad] per joint.
+        joint_k_gains: Optional[List[float]] = None,
+        joint_d_gains: Optional[List[float]] = None,
+        # cartesian_impedance_controller: (translational, rotational) stiffness.
+        cartesian_stiffness: Tuple[float, float] = (150.0, 10.0),
         enable_var_scale_feedback: bool = False,
         var_scale_factor: float = 1.0,
         enable_metrics: bool = True,
@@ -204,14 +222,41 @@ class RobosuiteFrankaFollower:
         ]
         self._ext_wrench_prev = [np.zeros(6) for _ in range(num_robots)]
 
-        arm_controller_config = {
-            "type": "JOINT_POSITION",
-            "input_type": "absolute",
-            "kp": kp,
-            "damping_ratio": damping_ratio,
-            "impedance_mode": "fixed",
-            "interpolation": None,
-        }
+        if controller not in CONTROLLERS:
+            raise ValueError(f"Unknown controller '{controller}', expected one of {CONTROLLERS}.")
+        self._controller = controller
+        if controller == "joint_trajectory_controller":
+            arm_controller_config = {
+                "type": "JOINT_POSITION",
+                "input_type": "absolute",
+                "kp": kp,
+                "damping_ratio": damping_ratio,
+                "impedance_mode": "fixed",
+                "interpolation": None,
+            }
+        elif controller == "joint_impedance_controller":
+            k = np.asarray(joint_k_gains, dtype=np.float64)
+            d = np.asarray(joint_d_gains, dtype=np.float64)
+            # robosuite derives kd = 2 * sqrt(kp) * damping_ratio -> reproduce d exactly.
+            arm_controller_config = {
+                "type": "JOINT_POSITION",
+                "input_type": "absolute",
+                "kp": k.tolist(),
+                "damping_ratio": (d / (2.0 * np.sqrt(k))).tolist(),
+                "impedance_mode": "fixed",
+                "interpolation": None,
+            }
+        else:
+            t_k, r_k = cartesian_stiffness
+            arm_controller_config = {
+                "type": "OSC_POSE",
+                "input_type": "absolute",
+                "input_ref_frame": "base",
+                "kp": [t_k, t_k, t_k, r_k, r_k, r_k],
+                "damping_ratio": 1.0,  # critically damped, like the real controller
+                "impedance_mode": "fixed",
+                "interpolation": None,
+            }
         controller_configs = []
         for _ in range(num_robots):
             composite_config = load_composite_controller_config(robot="Panda")
@@ -308,7 +353,25 @@ class RobosuiteFrankaFollower:
             for i in range(num_robots)
         ]
 
-        self._cmd_sub = [ZMQSubscriber(a["joint_pos_cmd_pub"]) for a in zmq_addresses]
+        cmd_key = (
+            "ee_pose_cmd_pub"
+            if controller == "cartesian_impedance_controller"
+            else "joint_pos_cmd_pub"
+        )
+        self._cmd_sub = [ZMQSubscriber(a[cmd_key]) for a in zmq_addresses]
+        # OSC controls the gripper's grip site, while the pose we publish (o_T_ee) and the
+        # leader's pose targets refer to the eef body -- fixed transform between the two.
+        self._grip_site = [
+            self._env.robots[i].gripper["right"].important_sites["grip_site"]
+            for i in range(num_robots)
+        ]
+        self._eef_T_site = []
+        self._hold_site_action = []
+        for i in range(num_robots):
+            base_T_eef = self._env.robots[i].pose_in_base_from_name(self._eef_name[i])
+            base_T_site = self._site_pose_in_base(i)
+            self._eef_T_site.append(np.linalg.inv(base_T_eef) @ base_T_site)
+            self._hold_site_action.append(self._pose_to_action(base_T_site))
         self._state_pub = [ZMQPublisher(a["joint_state_sub"]) for a in zmq_addresses]
         self._torque_pub = [ZMQPublisher(a["joint_torque_sub"]) for a in zmq_addresses]
         self._raw_torque_pub = [
@@ -449,10 +512,34 @@ class RobosuiteFrankaFollower:
         state[side] = prev
         return prev
 
+    def _site_pose_in_base(self, side: int) -> np.ndarray:
+        robot = self._env.robots[side]
+        data = self._env.sim.data
+        base_R = robot.base_ori
+        pose = np.eye(4)
+        pose[:3, :3] = base_R.T @ data.get_site_xmat(self._grip_site[side])
+        pose[:3, 3] = base_R.T @ (data.get_site_xpos(self._grip_site[side]) - robot.base_pos)
+        return pose
+
+    @staticmethod
+    def _pose_to_action(pose: np.ndarray) -> np.ndarray:
+        """4x4 base-frame pose -> OSC_POSE absolute action [x, y, z, ax, ay, az]."""
+        return np.concatenate([pose[:3, 3], T.quat2axisangle(T.mat2quat(pose[:3, :3]))])
+
     def _build_action(self) -> np.ndarray:
         action_parts = []
         for side in range(self._num_robots):
             arm_cmd = self._cmd_sub[side].message
+            if self._controller == "cartesian_impedance_controller":
+                if arm_cmd is None:
+                    # No leader pose yet -- hold the start pose.
+                    arm_action = self._hold_site_action[side]
+                else:
+                    base_T_eef = np.array(arm_cmd, dtype=np.float64).reshape(4, 4, order="F")
+                    arm_action = self._pose_to_action(base_T_eef @ self._eef_T_site[side])
+                action_parts.append(arm_action)
+                action_parts.append(np.array([self._gripper_action[side]], dtype=np.float64))
+                continue
             if arm_cmd is None:
                 # Leader for this side hasn't sent anything yet -- hold the robot's
                 # current position instead of stalling the whole shared env step (the

@@ -1,0 +1,9 @@
+# Loaded by the spawner (-p) into the cartesian_impedance_controller node; the robosuite
+# sim reads the same stiffness for its equivalent controller. Defaults of the franka_ros2
+# jazzy cartesian_impedance_example_controller.
+/**:
+  ros__parameters:
+    arm_id: panda
+    translational_stiffness: 150.0  # N/m
+    rotational_stiffness: 10.0      # Nm/rad
+    nullspace_stiffness: 20.0

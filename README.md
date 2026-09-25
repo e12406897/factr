@@ -112,6 +112,13 @@ Add `True` to enable the bounding-box safety mode (follower stops once it leaves
 bash launch/start_real_robot_single_teleop.sh left True
 ```
 
+The third argument selects the controller the follower drives (default `trajectory_controller`):
+```bash
+bash launch/start_real_robot_single_teleop.sh left False joint_impedance_controller
+bash launch/start_real_robot_single_teleop.sh left False cartesian_impedance_controller
+```
+The impedance controllers live in `src/factr/factr_controllers` (built by `colcon` like the rest of the workspace; gains in its `config/*.yaml`, shared with the sim's `--controller` option). The arm is still homed with `joint_trajectory_controller`, then switched over. `cartesian_impedance_controller` tracks end-effector poses and therefore only works with the Cartesian leaders (`spacemouse_teleop.py`, `omega6_teleop.py`), not with the FACTR exoskeleton.
+
 Switch between the `tmux` windows from a **second, fresh terminal** (the aliases are added to `.bashrc` by the script on first run):
 ```bash
 sw-hw   # switch to factr:hardware window

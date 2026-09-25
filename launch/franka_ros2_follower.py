@@ -25,8 +25,15 @@ class Args:
     side: str = "left"
     # If launching in this mode, the robot will only operate in a defined bounding box, otherwise it will stop
     save_launch: bool = False
+    # Active ros2_control controller to forward leader commands to: joint_trajectory_controller,
+    # joint_impedance_controller or cartesian_impedance_controller (must match the one
+    # spawned -- start_real_robot_single_teleop.sh passes it through).
+    controller: str = "joint_trajectory_controller"
     # franka_ros2 topic this robot's joint_trajectory_controller listens on.
     trajectory_topic: str = "/joint_trajectory_controller/joint_trajectory"
+    # factr_controllers topics (prefix with the robot namespace for the dual-arm setup).
+    joint_impedance_topic: str = "/joint_impedance_controller/joint_target"
+    cartesian_impedance_topic: str = "/cartesian_impedance_controller/equilibrium_pose"
     # franka_ros2 topic franka_robot_state_broadcaster publishes FrankaRobotState on.
     # Verify with `ros2 topic list` once the broadcaster is running — this is a best
     # guess, not confirmed.
@@ -67,7 +74,10 @@ def main(args: Args) -> None:
         side=args.side,
         save_launch=args.save_launch,
         node_name=f"factr_franka_ros2_follower_{args.side}",
+        controller=args.controller,
         trajectory_topic=args.trajectory_topic,
+        joint_impedance_topic=args.joint_impedance_topic,
+        cartesian_impedance_topic=args.cartesian_impedance_topic,
         robot_state_topic=args.robot_state_topic,
         trajectory_point_duration_sec=args.trajectory_point_duration_sec,
         joint_distance_threshold=args.joint_distance_threshold,

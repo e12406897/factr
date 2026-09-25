@@ -108,9 +108,22 @@ class CartesianLeader(Node, ABC):
         self._home_pos = self._ee_pos.copy()
         self._home_rot = self._ee_rot.copy()
 
+        # Same home as the follower itself reports it (O_T_EE, column-major 4x4), for the
+        # Cartesian target sent to a follower running the cartesian impedance controller
+        # -- that controller tracks exactly this frame, not our robosuite grip site.
+        o_t_ee_sub = ZMQSubscriber(zmq_addresses["o_t_ee_sub"])
+        while o_t_ee_sub.message is None:
+            time.sleep(0.1)
+        self._home_o_t_ee = np.array(o_t_ee_sub.message, dtype=np.float64).reshape(
+            4, 4, order="F"
+        )
+
         # Follower's external end-effector wrench [Fx,Fy,Fz,Mx,My,Mz], base frame.
         self._wrench_sub = ZMQSubscriber(zmq_addresses["eef_wrench_sub"])
+        # Both targets are published every tick; the follower uses whichever matches its
+        # controller (joint targets: trajectory / joint impedance, pose: cartesian impedance).
         self._cmd_pub = ZMQPublisher(zmq_addresses["joint_pos_cmd_pub"])
+        self._pose_cmd_pub = ZMQPublisher(zmq_addresses["ee_pose_cmd_pub"])
         self._gripper_pub = self.create_publisher(
             JointState, f"/factr_teleop/{name}/cmd_gripper_pos", 10
         )
@@ -210,6 +223,11 @@ class CartesianLeader(Node, ABC):
         q_des = self._compute_joint_positions(self._q_cmd, dpos, drot)
         self._q_cmd = np.clip(q_des, self._q_min, self._q_max)
         self._cmd_pub.send_message(self._q_cmd)
+
+        o_t_ee_cmd = np.eye(4)
+        o_t_ee_cmd[:3, :3] = rot_offset @ self._home_o_t_ee[:3, :3]
+        o_t_ee_cmd[:3, 3] = self._home_o_t_ee[:3, 3] + pos_offset
+        self._pose_cmd_pub.send_message(o_t_ee_cmd.flatten(order="F"))
 
         # Every tick (like FACTRTeleop); the followers only act on state changes.
         msg = JointState()

@@ -4,11 +4,13 @@
 #   0. kill leftover processes/tmux session from previous runs
 #   1. (tmux window "hardware") franka.launch.py
 #   2. (tmux window "bridge", after /controller_manager is up) spawn
-#      joint_trajectory_controller -> one-shot move to start pose ->
-#      franka_ros2_follower.py bridge (see start_bridge_sequence.sh)
+#      joint_trajectory_controller -> one-shot move to start pose -> switch to the
+#      chosen controller -> franka_ros2_follower.py bridge (see start_bridge_sequence.sh)
 #
-# Usage: bash launch/start_single_teleop.sh left
-#        bash launch/start_single_teleop.sh right
+# Usage: bash launch/start_real_robot_single_teleop.sh {left|right} [True|False] [controller]
+#   controller: trajectory_controller (default), joint_impedance_controller or
+#               cartesian_impedance_controller (Cartesian leaders only: SpaceMouse/Omega.6)
+# e.g.   bash launch/start_real_robot_single_teleop.sh right False cartesian_impedance_controller
 #
 #        switch tmux terminals in seperate terminal with:
 #         - sw-hw  ->  franka hardware launch
@@ -18,6 +20,7 @@ set -e
 
 SIDE="${1:-}"
 SAVE_LAUNCH="${2:-False}"
+CONTROLLER="${3:-trajectory_controller}"
 SESSION="factr"
 
 # One-time, idempotent setup of window-switching shortcuts for a second, plain terminal
@@ -39,6 +42,8 @@ pkill -9 -f "joint_state_publisher" 2>/dev/null || true
 pkill -9 -f "franka_gripper_node" 2>/dev/null || true
 pkill -9 -f "franka_ros2_follower.py" 2>/dev/null || true
 pkill -9 -f "spawner joint_trajectory_controller" 2>/dev/null || true
+pkill -9 -f "spawner joint_impedance_controller" 2>/dev/null || true
+pkill -9 -f "spawner cartesian_impedance_controller" 2>/dev/null || true
 sleep 1
 
 cd /factr
@@ -64,7 +69,7 @@ for i in $(seq 1 60); do
 done
 
 tmux new-window -t "$SESSION" -n bridge
-tmux send-keys -t "$SESSION":bridge "bash /factr/launch/start_bridge_sequence.sh ${SIDE} ${SAVE_LAUNCH}" C-m
+tmux send-keys -t "$SESSION":bridge "bash /factr/launch/start_bridge_sequence.sh ${SIDE} ${SAVE_LAUNCH} ${CONTROLLER}" C-m
 
 echo "Attaching to tmux session '$SESSION' (windows: hardware, bridge)."
 echo "Ctrl-b keybindings don't work reliably in VS Code's terminal — instead, open a"
