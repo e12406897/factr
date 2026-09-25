@@ -288,7 +288,7 @@ class Args:
     side: str = "left"  # left, right, sim_left, sim_right
     control_freq: float = 20.0
     # Robot metres per handle metre / robot radians per handle radian.
-    translation_scale: float = 1.0
+    translation_scale: float = 7.0
     rotation_scale: float = 1.0
     # Max end-effector step per control tick -> max speed = limit * control_freq.
     ik_pos_limit: float = 0.02

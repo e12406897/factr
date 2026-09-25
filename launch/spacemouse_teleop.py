@@ -97,12 +97,14 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         pos_sensitivity: float,
         rot_sensitivity: float,
         device_path: str,
+        deadzone: float,
         **kwargs,
     ):
         # Same per-step limits as the leader's IK clip, so the accumulated target never
         # runs ahead of what the robot is commanded to do.
         self._step_pos_limit = kwargs["ik_pos_limit"]
         self._step_ori_limit = kwargs["ik_ori_limit"]
+        self._deadzone = deadzone
         self._pos_offset = np.zeros(3)
         self._rot_offset = np.eye(3)
         # Imported from the submodule directly: robosuite.devices swallows the ImportError
@@ -139,6 +141,7 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
             self._device.start_control()
             return self._pos_offset, self._rot_offset, self._gripper_closed
 
+
         # --- robosuite Device.input2action (its default mapping, mirror_actions=False) ---
         dpos = state["dpos"]
         raw_drotation = state["raw_drotation"]
@@ -147,6 +150,10 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
         dpos, drotation = self._device._postprocess_device_outputs(dpos, drotation)
         dpos = np.clip(dpos, -1, 1)
         drotation = np.clip(drotation, -1, 1)
+
+        #deadband
+        dpos[np.abs(dpos) < self._deadzone*0.5] = 0.0
+        drotation[np.abs(drotation) < self._deadzone] = 0.0
 
         # --- robosuite IK_POSE._clip_ik_input, then accumulate (rate device -> pose) ---
         if dpos.any():
@@ -162,12 +169,13 @@ class _SpaceMouseCartesianLeader(CartesianLeader):
 class Args:
     side: str = "left"  # left, right, sim_left, sim_right
     control_freq: float = 20.0
-    pos_sensitivity: float = 1.0
+    pos_sensitivity: float = 0.5
     rot_sensitivity: float = 1.0
     # Max end-effector step per control tick (robosuite IK_POSE defaults); max speed is
     # ik_pos_limit * control_freq [m/s] and ik_ori_limit * control_freq [rad/s].
-    ik_pos_limit: float = 0.02
-    ik_ori_limit: float = 0.05
+    ik_pos_limit: float = 0.003
+    ik_ori_limit: float = 0.02
+    deadzone: float = 0.2
     # e.g. /dev/hidraw3 -- only needed if the auto-detected device/interface is wrong
     device_path: str = ""
 
@@ -180,6 +188,7 @@ def main(args: Args) -> None:
         pos_sensitivity=args.pos_sensitivity,
         rot_sensitivity=args.rot_sensitivity,
         device_path=args.device_path,
+        deadzone=args.deadzone,
         name=args.side,
         zmq_addresses=_ZMQ_ADDRESSES[args.side],
         control_freq=args.control_freq,
