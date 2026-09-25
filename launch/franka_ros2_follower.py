@@ -59,6 +59,7 @@ class Args:
     gripper_speed: float = 0.1
     gripper_goal_position_threshold: float = 0.005
     gripper_goal_refresh_period_sec: float = 0.1
+    var_scale_factor: float = 0.1
 
 
 def main(args: Args) -> None:
@@ -91,6 +92,7 @@ def main(args: Args) -> None:
         gripper_speed=args.gripper_speed,
         gripper_goal_position_threshold=args.gripper_goal_position_threshold,
         gripper_goal_refresh_period_sec=args.gripper_goal_refresh_period_sec,
+        var_scale_factor = args.var_scale_factor,
     )
 
 

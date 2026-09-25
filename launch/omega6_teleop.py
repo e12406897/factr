@@ -262,10 +262,10 @@ class _Omega6CartesianLeader(CartesianLeader):
             self._wrench_bias = force.copy()
         force = force - self._wrench_bias
         # Same soft deadband as FACTRTeleop.torque_feedback (suppresses estimator noise).
-        force = force * (1.0 - 1.0 / np.cosh(force))
+        force = force * (1.0 - 1.0 / np.cosh(force/4))
         # Push the handle the way the environment pushes the robot (verified on the
         # device: the opposite sign pulled the handle into the contact). Base -> device.
-        f_dev = self._force_feedback_gain * _OMEGA_TO_BASE.T @ force
+        f_dev = -self._force_feedback_gain * _OMEGA_TO_BASE.T @ force
         norm = np.linalg.norm(f_dev)
         if norm > self._max_force:
             f_dev *= self._max_force / norm
@@ -296,9 +296,9 @@ class Args:
     gripper_button_index: int = 0
     haptic_rate: float = 1000.0
     # Handle force per follower contact force [N/N]; 0 disables force feedback.
-    force_feedback_gain: float = 0.2
+    force_feedback_gain: float = 0.04
     # Hard limit on the rendered handle force [N] (also set as the device's own limit).
-    max_force: float = 4.0
+    max_force: float = 2.5
 
 
 def main(args: Args) -> None:
