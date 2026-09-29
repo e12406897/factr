@@ -72,9 +72,9 @@ The container is pinned to these versions for Franka Robot System **5.2.7**:
 | `libfranka` | 0.10.0 |
 | ROS2 Humble | July 2023 snapshot |
 
-If your robot runs a different system version, update all three before building:
-1. [libfranka version for your Franka System version](https://frankarobotics.github.io/docs/doc/libfranka/docs/compatibility_matrix.html)
-2. [franka_ros2 version for that libfranka version](https://frankarobotics.github.io/docs/doc/franka_ros2_humble/franka_ros2/doc/compatibility_matrix.html)
+`libfranka` is built from source in the `Dockerfile` (no host mount/install needed) — if your robot runs a different system version, update all three before building:
+1. [libfranka version for your Franka System version](https://frankarobotics.github.io/docs/doc/libfranka/docs/compatibility_matrix.html), and change the `--branch 0.10.0` in the `Dockerfile`'s libfranka build step to match
+2. [franka_ros2 version for that libfranka version](https://frankarobotics.github.io/docs/doc/franka_ros2_humble/franka_ros2/doc/compatibility_matrix.html), and update `FRANKA_ROS2_VERSION` in `.devcontainer/post_create.sh`
 3. Match the ROS2 Humble snapshot date in the `Dockerfile` to that `franka_ros2` release date ([franka_ros2 tags](https://github.com/frankarobotics/franka_ros2/tags))
 
 `robosuite` (and the compatible `mujoco`/`numpy` versions it needs — see [Troubleshooting](#troubleshooting)) is installed via `requirements.txt` as part of the image build.

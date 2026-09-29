@@ -32,5 +32,4 @@ rosdep install --from-paths src --ignore-src -r -y --skip-keys libfranka
 python3 -m pip install --no-cache-dir -e src/factr/factr_teleop/factr_teleop/dynamixel/python
 
 colcon build --symlink-install \
-    --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
-    -DCMAKE_CXX_FLAGS=-I/home/asl_team/libfranka/include
+    --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF

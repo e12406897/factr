@@ -56,17 +56,19 @@
 
     "mounts": [
     "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
-    "source=/dev/serial/by-id,target=/dev/serial/by-id,type=bind",
+    // Full host /dev (not just /dev/serial/by-id) -- shares the host's live devtmpfs, so
+    // USB-serial adapters (Dynamixel leader arm) that get unplugged and replugged while
+    // the container is running reappear on their own, without a container restart. Only
+    // effective together with --privileged above (grants the cgroup device permissions;
+    // this mount is what makes newly-created host device nodes visible at all).
+    "source=/dev,target=/dev,type=bind",
     "source=/home/asl_team/catkin_ws/devel/lib/libfranka_hw.so,target=/usr/local/lib/libfranka_hw.so,type=bind",
     "source=/home/asl_team/catkin_ws/devel/lib/libfranka_control_services.so,target=/usr/local/lib/libfranka_control_services.so,type=bind",
-    "source=/home/asl_team/libfranka/build,target=/home/asl_team/libfranka/build,type=bind",
-    "source=/home/asl_team/libfranka/include,target=/home/asl_team/libfranka/include,type=bind",
     "source=/lib/x86_64-linux-gnu/libPocoNet.so.62,target=/lib/x86_64-linux-gnu/libPocoNet.so.62,type=bind",
     "source=/lib/x86_64-linux-gnu/libPocoFoundation.so.62,target=/lib/x86_64-linux-gnu/libPocoFoundation.so.62,type=bind"
     ],
 
     "containerEnv": {
-        "Franka_DIR": "/home/asl_team/libfranka/build",
         "ROS_DOMAIN_ID": "42"
     },
 

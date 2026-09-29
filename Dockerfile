@@ -131,6 +131,37 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
+# libfranka 0.10.0 -- built from source instead of bind-mounted from the host (see
+# devcontainer.json, which used to mount a host-built /home/asl_team/libfranka/{build,include}
+# and set Franka_DIR to point at it). Built against Ubuntu 22.04's own libpoco-dev/
+# libeigen3-dev, so it's fully self-contained in the image; `cmake --install` puts it under
+# the standard /usr/local prefix with its own FrankaConfig.cmake, so
+# franka_hardware's `find_package(Franka REQUIRED)` (see post_create.sh's colcon build) finds
+# it with no extra flags needed -- unlike the old Franka_DIR/-I hack.
+#
+# Version/branch must track franka_ros2's pinned tag (FRANKA_ROS2_VERSION in
+# post_create.sh) -- see the compatibility matrix links in README.md's Troubleshooting.
+# ============================================================
+
+# libpoco-dev is already installed above (ROS 2 Humble deps block); only libeigen3-dev
+# is new here.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libeigen3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --branch 0.10.0 --recursive --depth 1 \
+        https://github.com/frankaemika/libfranka.git /tmp/libfranka && \
+    cmake -S /tmp/libfranka -B /tmp/libfranka/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_EXAMPLES=OFF && \
+    cmake --build /tmp/libfranka/build -j"$(nproc)" && \
+    cmake --install /tmp/libfranka/build && \
+    ldconfig && \
+    rm -rf /tmp/libfranka
+
+# ============================================================
 # hidapi / libusb runtime libs for the SpaceMouse leader (launch/teleop_spacemouse.py,
 # via robosuite's SpaceMouse driver and the `hidapi` pip package). Not present on this
 # minimal CUDA base image.
