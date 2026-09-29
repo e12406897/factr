@@ -296,7 +296,7 @@ class Args:
     gripper_button_index: int = 0
     haptic_rate: float = 1000.0
     # Handle force per follower contact force [N/N]; 0 disables force feedback.
-    force_feedback_gain: float = 0.04
+    force_feedback_gain: float = 0.01
     # Hard limit on the rendered handle force [N] (also set as the device's own limit).
     max_force: float = 2.5
 

@@ -695,11 +695,11 @@ class FACTRTeleop(Node, ABC):
         switch_on = False
 
         if switch_on:
-            alpha = 0.5*(np.tanh(13.4* (x - 3)) + 1)
+            alpha = 0.5*(np.tanh(2* (x - 7)) + 1)
             if alpha < 3e-3:
                 switch_on = False
         else:
-            alpha = 0.5*(np.tanh(6.4* (x - 3.5)) + 1)
+            alpha = 0.5*(np.tanh(3* (x - 9)) + 1)
             if alpha > 0.99:
                 switch_on = True
 
