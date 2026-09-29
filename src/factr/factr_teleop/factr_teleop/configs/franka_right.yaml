@@ -35,7 +35,7 @@ arm_teleop:
     # The expected leader arm joint position before launching the script
     calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.0]
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
-    initial_match_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.785]
+    initial_match_joint_pos: [0, -0.785398, 0, -2.356194, 0, 1.570796, 0.785398 ]
   
 controller:
   frequency: 500

@@ -7,7 +7,7 @@ set -e
 
 # Franka's own "home" joint configuration (unchanged default -- see franka.launch.py /
 # libfranka's own homing pose), used whenever no initial pose is given.
-HOME_POSE="0,0,0,-1.57,0,1.57,0.785"
+HOME_POSE="0.0,-0.785398,0.0,-2.356194,0.0,1.570796,0.785398"
 
 SIDE="${1:-}"
 INITIAL_POSE="${2:-$HOME_POSE}"
