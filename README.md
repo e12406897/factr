@@ -22,20 +22,23 @@ On top of the original FACTR teleop code, this repo adds:
 factr/
 ├── .devcontainer/          # Dockerfile config, entrypoint, container setup script
 ├── launch/                 # Everything you actually run (Python + bash + ROS2 launch files)
-│   ├── factr_teleop.py             # ROS2 launch file for the leader (FACTR teleop node)
-│   ├── franka_ros2_follower.py     # CLI: real-robot follower bridge (single arm)
+│   ├── teleop_factr.py             # ROS2 launch file for the leader (FACTR teleop node)
+│   ├── teleop_spacemouse.py        # CLI: 3Dconnexion SpaceMouse Cartesian leader
+│   ├── teleop_omega6.py            # CLI: Force Dimension Omega.6 Cartesian leader
+│   ├── franka_single_arm.launch.py # CLI: real-robot follower bridge (single arm)
 │   ├── franka_dual_arm.launch.py   # ROS2 launch file: two namespaced franka.launch.py (bimanual hardware)
-│   ├── robosuite_sim.py            # CLI: robosuite follower sim (single arm or bimanual)
+│   ├── franka_robosuite_sim.launch.py  # CLI: robosuite follower sim (single arm or bimanual)
 │   ├── start_real_robot_single_teleop.sh  # one-command tmux launcher, single-arm real robot
 │   ├── start_bridge_sequence.sh    # helper called by the script above
 │   ├── collect_data.py             # behavior-cloning data collection
 │   ├── rollout.py                  # policy rollout
-│   └── read_franka_q_offset.py     # small debug helper (leader/follower joint offset readout)
+│   └── read_offset.py              # small debug helper (leader/follower joint offset readout)
 ├── src/
 │   ├── factr/
 │   │   ├── factr_teleop/           # leader-side teleop node (ROS2 package "factr_teleop")
 │   │   │   └── factr_teleop/configs/  # per-side YAML configs (franka_left.yaml, franka_right.yaml, franka_sim_left.yaml, franka_sim_right.yaml)
 │   │   ├── follower_robots/        # follower bridges: franka_ros2_follower.py (real), robosuite_franka_follower.py (sim)
+│   │   ├── cartesian_teleop/       # cartesian_leader.py: shared base for Cartesian-space leaders (SpaceMouse, Omega.6)
 │   │   ├── python_utils/           # shared ZMQ messenger + global ZMQ address/config table
 │   │   ├── bc/                     # behavior cloning: data recording, rollout
 │   │   └── cameras/                # camera drivers/utilities
@@ -84,15 +87,15 @@ Try the simulation before touching real hardware.
 
 Single arm, in a fresh terminal inside the container:
 ```bash
-python launch/robosuite_sim.py --side left --table-offset-z 1.3
+python launch/franka_robosuite_sim.launch.py --side left --table-offset-z 1.3
 ```
 
 Bimanual (one process drives both arms — a shared physics step is required):
 ```bash
-python launch/robosuite_sim.py --side both --table-offset-z 1.3
+python launch/franka_robosuite_sim.launch.py --side both --table-offset-z 1.3
 ```
 
-`--table-offset-z` raises the table (meters) relative to the robot base; omit it to use robosuite's default. Run `python launch/robosuite_sim.py --help` for all options (env name, controller gains, torque-feedback filtering, renderer).
+`--table-offset-z` raises the table (meters) relative to the robot base; omit it to use robosuite's default. Run `python launch/franka_robosuite_sim.launch.py --help` for all options (env name, controller gains, torque-feedback filtering, renderer).
 
 Then launch the matching leader(s) — see [Launch FACTR Teleoperation](#launch-factr-teleoperation) with `side:=sim_left` / `side:=sim_right`.
 
@@ -107,17 +110,20 @@ bash launch/start_real_robot_single_teleop.sh left
 ```
 This kills leftover processes, launches `franka.launch.py`, spawns `joint_trajectory_controller`, moves the arm to `[0, 0, 0, -1.57, 0, 1.57, 0.785]`, then starts the `franka_ros2` bridge — all inside `tmux`.
 
-Add `True` to enable the bounding-box safety mode (follower stops once it leaves a predefined workspace box, defined in `src/factr/follower_robots/franka_ros2_follower.py`):
+A 2nd argument overrides the initial pose the arm moves to (comma-separated joint positions in rad, no spaces, `j1,...,j7`, brackets optional) — defaults to Franka's home pose (`0,0,0,-1.57,0,1.57,0.785`) if omitted:
 ```bash
-bash launch/start_real_robot_single_teleop.sh left True
+bash launch/start_real_robot_single_teleop.sh left 0,-0.5,0,-2.0,0,1.5,0.785
 ```
 
-The third argument selects the controller the follower drives (default `trajectory_controller`):
+A 3rd argument overrides the Franka's hostname/IP (passed as `franka.launch.py`'s `robot_ip`) — defaults to `franka` if omitted:
 ```bash
-bash launch/start_real_robot_single_teleop.sh left False joint_impedance_controller
-bash launch/start_real_robot_single_teleop.sh left False cartesian_impedance_controller
+bash launch/start_real_robot_single_teleop.sh left "" 192.168.1.5
 ```
-The impedance controllers live in `src/factr/factr_controllers` (built by `colcon` like the rest of the workspace; gains in its `config/*.yaml`, shared with the sim's `--controller` option). The arm is still homed with `joint_trajectory_controller`, then switched over. `cartesian_impedance_controller` tracks end-effector poses and therefore only works with the Cartesian leaders (`spacemouse_teleop.py`, `omega6_teleop.py`), not with the FACTR exoskeleton.
+
+Add `True` as the 4th argument to enable the bounding-box safety mode (follower stops once it leaves a predefined workspace box, defined in `src/factr/follower_robots/franka_ros2_follower.py`). Pass `""` for arguments you want to leave at their default:
+```bash
+bash launch/start_real_robot_single_teleop.sh left "" "" True
+```
 
 Switch between the `tmux` windows from a **second, fresh terminal** (the aliases are added to `.bashrc` by the script on first run):
 ```bash
@@ -151,7 +157,7 @@ ros2 launch franka_bringup move_to_start_example_controller.launch.py robot_ip:=
 
 Then start the `franka_ros2` bridge:
 ```bash
-python launch/franka_ros2_follower.py --side <side> --config-file <config_file> --save-launch
+python launch/franka_single_arm.launch.py --side <side> --config-file <config_file> --save-launch
 ```
 - `<side>`: `left` or `right`.
 - `<config_file>`: the matching FACTR teleop config, e.g. `franka_left.yaml` — keeping this identical to the leader's config avoids parameter mismatches (e.g. gripper actuation range) between the two processes.
@@ -172,12 +178,12 @@ There is no one-command script for bimanual real hardware yet — launch each pi
    ```
 3. Start one bridge process per side, pointing at the namespaced topics:
    ```bash
-   python launch/franka_ros2_follower.py --side left \
+   python launch/franka_single_arm.launch.py --side left \
        --config-file franka_left.yaml \
        --trajectory-topic /left/joint_trajectory_controller/joint_trajectory \
        --robot-state-topic /left/franka_robot_state_broadcaster/robot_state
 
-   python launch/franka_ros2_follower.py --side right \
+   python launch/franka_single_arm.launch.py --side right \
        --config-file franka_right.yaml \
        --trajectory-topic /right/joint_trajectory_controller/joint_trajectory \
        --robot-state-topic /right/franka_robot_state_broadcaster/robot_state
@@ -188,7 +194,7 @@ There is no one-command script for bimanual real hardware yet — launch each pi
 Launch the leader for each side in its own terminal, matching whatever follower/simulation is already running. Controller behavior (gravity compensation, friction compensation, etc.) and per-side hardware parameters live in `src/factr/factr_teleop/factr_teleop/configs/`.
 
 ```bash
-ros2 launch launch/factr_teleop.py side:=<side>
+ros2 launch launch/teleop_factr.py side:=<side>
 ```
 `<side>` ∈ `left`, `right`, `sim_left`, `sim_right` — this also selects the config file (`franka_<side>.yaml`).
 

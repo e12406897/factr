@@ -2,7 +2,7 @@
 franka_robot_state_broadcaster and print the offset against a target array you define.
 
 Usage:
-    python3 launch/read_franka_q_offset.py --target 0 0 0 -1.57 0 1.57 0.785
+    python3 launch/read_offset.py --target 0 0 0 -1.57 0 1.57 0.785
 """
 import sys
 from pathlib import Path

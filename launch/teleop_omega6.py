@@ -26,8 +26,8 @@ handle is pushed away from a contact the way the robot is. The passive wrist can
 render moments.
 
 Usage:
-    python3 launch/omega6_teleop.py --side left
-    python3 launch/omega6_teleop.py --side sim_right
+    python3 launch/teleop_omega6.py --side left
+    python3 launch/teleop_omega6.py --side sim_right
 """
 import sys
 import threading
@@ -43,7 +43,6 @@ import tyro
 _SRC_FACTR = Path(__file__).parent.parent / "src" / "factr"
 sys.path.insert(0, str(_SRC_FACTR))
 sys.path.insert(0, str(_SRC_FACTR / "python_utils"))
-sys.path.insert(0, str(_SRC_FACTR / "factr_teleop"))
 
 from python_utils.global_configs import (
     franka_left_real_zmq_addresses,
@@ -52,7 +51,7 @@ from python_utils.global_configs import (
     franka_sim_right_zmq_addresses,
 )
 
-from factr_teleop.cartesian_leader import CartesianLeader, spin
+from cartesian_teleop.cartesian_leader import CartesianLeader, spin
 
 _ZMQ_ADDRESSES = {
     "left": franka_left_real_zmq_addresses,

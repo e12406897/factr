@@ -38,9 +38,6 @@ franka_right_real_zmq_addresses = {
     # (manipulator-redundancy) null-space term.
     "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:3085",
     "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:3084",
-    # Cartesian leaders' end-effector target (4x4, flattened column-major like O_T_EE),
-    # used when the follower runs the cartesian impedance controller.
-    "ee_pose_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2097",
 }
 
 franka_left_real_zmq_addresses = {
@@ -50,7 +47,6 @@ franka_left_real_zmq_addresses = {
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
     "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:5085",
     "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:5084",
-    "ee_pose_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4097",
 }
 
 # Distinct port sets per side so both sim arms can run simultaneously later for a
@@ -63,7 +59,6 @@ franka_sim_right_zmq_addresses = {
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2098",
     "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:3085",
     "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:3084",
-    "ee_pose_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:2097",
 }
 
 franka_sim_left_zmq_addresses = {
@@ -73,5 +68,4 @@ franka_sim_left_zmq_addresses = {
     "joint_pos_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4098",
     "eef_wrench_sub": f"tcp://{franka_bridge_loopback_ip}:5085",
     "o_t_ee_sub": f"tcp://{franka_bridge_loopback_ip}:5084",
-    "ee_pose_cmd_pub": f"tcp://{franka_bridge_loopback_ip}:4097",
 }

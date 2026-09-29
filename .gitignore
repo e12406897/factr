@@ -24,3 +24,5 @@ third_party/forcedimension_sdk/
 
 /*.AppImage
 /*.run
+
+.claude/

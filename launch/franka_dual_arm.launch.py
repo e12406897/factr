@@ -20,11 +20,11 @@ def generate_launch_description():
         ros2 run controller_manager spawner joint_trajectory_controller \\
             --controller-manager /right/controller_manager
 
-    Then run franka_ros2_follower.py per side with matching namespaced topics:
-        python launch/franka_ros2_follower.py --name left \\
+    Then run franka_single_arm.launch.py per side with matching namespaced topics:
+        python launch/franka_single_arm.launch.py --name left \\
             --trajectory-topic /left/joint_trajectory_controller/joint_trajectory \\
             --robot-state-topic /left/franka_robot_state_broadcaster/robot_state
-        python launch/franka_ros2_follower.py --name right \\
+        python launch/franka_single_arm.launch.py --name right \\
             --trajectory-topic /right/joint_trajectory_controller/joint_trajectory \\
             --robot-state-topic /right/franka_robot_state_broadcaster/robot_state
 

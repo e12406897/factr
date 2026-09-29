@@ -226,7 +226,7 @@ Once the subclass and YAML configuration file have been prepared, you are ready 
 
 2. **Launch the teleop node** using your custom launch file. For example, from the `<repo_root>` directory:
    ```bash
-   ros2 launch launch/factr_teleop.py
+   ros2 launch launch/teleop_factr.py
    ```
 
 3. **Check USB latency timer** (automated):

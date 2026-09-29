@@ -11,8 +11,8 @@ robosuite's driver uses) -- NOT the ctypes `hid` package; uninstall that one fir
 present, both install a module called `hid`.
 
 Usage:
-    python3 launch/spacemouse_teleop.py --side left
-    python3 launch/spacemouse_teleop.py --side sim_right
+    python3 launch/teleop_spacemouse.py --side left
+    python3 launch/teleop_spacemouse.py --side sim_right
 """
 import sys
 from dataclasses import dataclass
@@ -27,7 +27,6 @@ import tyro
 _SRC_FACTR = Path(__file__).parent.parent / "src" / "factr"
 sys.path.insert(0, str(_SRC_FACTR))
 sys.path.insert(0, str(_SRC_FACTR / "python_utils"))
-sys.path.insert(0, str(_SRC_FACTR / "factr_teleop"))
 
 from python_utils.global_configs import (
     franka_left_real_zmq_addresses,
@@ -36,7 +35,7 @@ from python_utils.global_configs import (
     franka_sim_right_zmq_addresses,
 )
 
-from factr_teleop.cartesian_leader import CartesianLeader, spin
+from cartesian_teleop.cartesian_leader import CartesianLeader, spin
 
 _ZMQ_ADDRESSES = {
     "left": franka_left_real_zmq_addresses,

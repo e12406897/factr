@@ -4,13 +4,18 @@
 #   0. kill leftover processes/tmux session from previous runs
 #   1. (tmux window "hardware") franka.launch.py
 #   2. (tmux window "bridge", after /controller_manager is up) spawn
-#      joint_trajectory_controller -> one-shot move to start pose -> switch to the
-#      chosen controller -> franka_ros2_follower.py bridge (see start_bridge_sequence.sh)
+#      joint_trajectory_controller -> one-shot move to start pose ->
+#      franka_single_arm.launch.py bridge (see start_bridge_sequence.sh)
 #
-# Usage: bash launch/start_real_robot_single_teleop.sh {left|right} [True|False] [controller]
-#   controller: trajectory_controller (default), joint_impedance_controller or
-#               cartesian_impedance_controller (Cartesian leaders only: SpaceMouse/Omega.6)
-# e.g.   bash launch/start_real_robot_single_teleop.sh right False cartesian_impedance_controller
+# Usage: bash launch/start_single_teleop.sh {left|right} [j1,j2,j3,j4,j5,j6,j7] [franka_ip] [True|False]
+#   2nd arg (initial_pose, optional): comma-separated joint positions [rad], no spaces
+#     (brackets like [j1,...,j7] are also accepted), sent as the one-shot move-to-start-pose
+#     before the bridge starts. Defaults to Franka's home pose (0,0,0,-1.57,0,1.57,0.785) if
+#     not given -- pass "" to keep the default while still setting a later arg.
+#   3rd arg (franka_ip, optional): hostname/IP passed as franka.launch.py's robot_ip. Defaults
+#     to "franka" if not given.
+# e.g.   bash launch/start_single_teleop.sh right 0,-0.5,0,-2.0,0,1.5,0.785
+#        bash launch/start_single_teleop.sh right "" 192.168.1.5 True
 #
 #        switch tmux terminals in seperate terminal with:
 #         - sw-hw  ->  franka hardware launch
@@ -19,8 +24,9 @@
 set -e
 
 SIDE="${1:-}"
-SAVE_LAUNCH="${2:-False}"
-CONTROLLER="${3:-trajectory_controller}"
+INITIAL_POSE="${2:-}"
+FRANKA_IP="${3:-franka}"
+SAVE_LAUNCH="${4:-False}"
 SESSION="factr"
 
 # One-time, idempotent setup of window-switching shortcuts for a second, plain terminal
@@ -40,10 +46,8 @@ pkill -9 -f "ros2_control_node" 2>/dev/null || true
 pkill -9 -f "robot_state_publisher" 2>/dev/null || true
 pkill -9 -f "joint_state_publisher" 2>/dev/null || true
 pkill -9 -f "franka_gripper_node" 2>/dev/null || true
-pkill -9 -f "franka_ros2_follower.py" 2>/dev/null || true
+pkill -9 -f "franka_single_arm.launch.py" 2>/dev/null || true
 pkill -9 -f "spawner joint_trajectory_controller" 2>/dev/null || true
-pkill -9 -f "spawner joint_impedance_controller" 2>/dev/null || true
-pkill -9 -f "spawner cartesian_impedance_controller" 2>/dev/null || true
 sleep 1
 
 cd /factr
@@ -52,7 +56,7 @@ source /factr/install/setup.bash
 
 tmux new-session -d -s "$SESSION" -n hardware
 tmux send-keys -t "$SESSION":hardware \
-    "cd /factr && source /opt/ros/humble/setup.bash && source /factr/install/setup.bash && ros2 launch franka_bringup franka.launch.py robot_ip:=franka" \
+    "cd /factr && source /opt/ros/humble/setup.bash && source /factr/install/setup.bash && ros2 launch franka_bringup franka.launch.py robot_ip:=${FRANKA_IP}" \
     C-m
 
 echo "Waiting for /controller_manager to come up (max 60s)..."
@@ -69,7 +73,7 @@ for i in $(seq 1 60); do
 done
 
 tmux new-window -t "$SESSION" -n bridge
-tmux send-keys -t "$SESSION":bridge "bash /factr/launch/start_bridge_sequence.sh ${SIDE} ${SAVE_LAUNCH} ${CONTROLLER}" C-m
+tmux send-keys -t "$SESSION":bridge "bash /factr/launch/start_bridge_sequence.sh ${SIDE} '${INITIAL_POSE}' ${SAVE_LAUNCH}" C-m
 
 echo "Attaching to tmux session '$SESSION' (windows: hardware, bridge)."
 echo "Ctrl-b keybindings don't work reliably in VS Code's terminal — instead, open a"
