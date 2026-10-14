@@ -59,7 +59,7 @@ Before building the dev container, connect the teleoperation hardware:
    ```bash
    ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
    ```
-3. When first setting up the hardware, motors need to be set correctly via Dynamixel Wizard 2.0 Software. All motors need to be set to baudrate 4,000,000. In general motors of the same kind should have the same settings. This can be checked with 
+3. When first setting up the hardware, motors need to be set correctly via Dynamixel Wizard 2.0 Software. All motors need to be set to baudrate of 4 million. In general motors of the same kind should have the same settings. This can be checked with 
    ```bash
    python launch/read_motor_specs.py
    ```
