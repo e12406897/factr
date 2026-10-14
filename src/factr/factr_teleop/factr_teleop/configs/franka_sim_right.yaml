@@ -32,10 +32,10 @@ arm_teleop:
   # Correct steady offset (can be determined with launch/read_offset.py)
   joint_bias_correction: [-0.0277,  0.0527, -0.0093, -0.0999, -0.011,   0.0181, 0.7602]
   initialization:
-    # The expected leader arm joint position before launching the script
+    # The expected leader arm joint position before launching the script (LAST JOINT HAS AN OFFSET OF 0.785398)
     calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.0]
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
-    initial_match_joint_pos: [0.0, -0.5, 0.0, -2.0, 0, 1.57, 0.785]
+    initial_match_joint_pos: [0, -0.785398, 0, -2.356194, 0, 1.570796, 0.785398 ]
   
 controller:
   frequency: 500
@@ -54,7 +54,7 @@ controller:
   null_space_torque_optimization:
     enable: True
     #parameters for null space torque optimization
-    gain: [0.5, 0.5, -0.2, 0.000001, 0.000001, 0.000001]
+    gain: [0, 0, -1.0, 0, 0, 0]
     #parameter damping
     damping: [0, 0, 0, 0, 0, 0, 0] # [0.04, 0.05, 0.04, 0.05, 0.04, 0.04, 0.04]
     #paramter manipulability

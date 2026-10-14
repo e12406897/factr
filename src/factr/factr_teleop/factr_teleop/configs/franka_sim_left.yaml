@@ -35,7 +35,7 @@ arm_teleop:
     # The expected leader arm joint position before launching the script
     calibration_joint_pos: [0, 0, 0, -1.57, 0, 1.57, 0.0]
     # The leader arm must be brought to this joint position before the follower starts mirroring the leader
-    initial_match_joint_pos: [0.0, -0.5, 0.0, -2.0, 0, 1.57, 0.785]
+    initial_match_joint_pos: [0, -0.785398, 0, -2.356194, 0, 1.570796, 0.785398 ]
   
 controller:
   frequency: 500
@@ -49,25 +49,19 @@ controller:
     gain: [0.5, 0.18, 0.4, 0.18, 0.5, 0.5, 0.5] 
   null_space_regulation:
     null_space_joint_target: [0.0, -0.7854, 0.0, -2.356, 0.0, 1.57, 0.0, 0.0]
-    kp:  [0.4, 0.1, 0.2, 0.1, 0.2, 0.2, 0.2]
-    kd:  [0.02, 0.05, 0.02, 0.045, 0.02, 0.02, 0.02]
+    kp:  [0.6, 0.15, 0.3, 0.15, 0.3, 0.3, 0.3]
+    kd: [0.02, 0.013, 0.02, 0.013, 0.02, 0.02, 0.02]
   null_space_torque_optimization:
     enable: True
     #parameters for null space torque optimization
-    weight_external_forces: [0.01, 0.01, 1.0, 0.01, 0.01, 0.01]
-    gain_force: [0.5, 0.8, 0.5, 0.8, 0.2, 0.2, 0.2]
-    gain_moment: [0.1, 0.15, 0.1, 0.15, 0.05, 0.05, 0.05]
+    gain: [0, 0, -1.0, 0, 0, 0]
     #parameter damping
-    damping: [0.04, 0.05, 0.04, 0.045, 0.05, 0.02, 0.02]
-    # #parameter joint limit avoidance
-    # avoid_limit_param_a: [10, 10, 10, 9, 4, 6.1, 3.7]
-    # avoid_limit_param_b: [-23, -15, -25, -10, -10, -10, -10]
-    # avoid_limit_gain: 0.0
+    damping: [0.04, 0.05, 0.04, 0.05, 0.04, 0.04, 0.04]
     #paramter manipulability
-    manip_gain: [0.2, 0.2, 0.3, 0.2, 0.15, 0.15, 0.15]
+    manip_gain: [10, 9, 10, 9, 10, 10, 10]
   static_friction_comp:
     enable_speed: 2
-    gain: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] 
+    gain: [0.2, 1, 0.2, 1, 0.2, 0.2, 0.2] 
   joint_limit_barrier:
     kp: 1.03561658022
     kd: 0.04315069084
