@@ -59,7 +59,15 @@ Before building the dev container, connect the teleoperation hardware:
    ```bash
    ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
    ```
-
+3. When first setting up the hardware, motors need to be set correctly via Dynamixel Wizard 2.0 Software. All motors need to be set to baudrate 4,000,000. In general motors of the same kind should have the same settings. This can be checked with 
+   ```bash
+   python launch/read_motor_specs.py
+   ```
+   Adjust the USB serial ports to correctly read them out. 
+4. All serial ports need to have their latency timer set to 1 ms. Do that for each one with
+   ```bash
+   echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB<NUMBER_OF_PORT>/latency_timer
+   ```
 Then:
 1. Install Docker Engine and the VS Code Dev Containers extension.
 2. Open the `factr` directory in VS Code and "Rebuild and Reopen in Container". This builds the image and runs `post_create.sh` (clones `franka_ros2`, installs the Dynamixel SDK, runs `colcon build`).
@@ -193,13 +201,55 @@ There is no one-command script for bimanual real hardware yet — launch each pi
 
 Launch the leader for each side in its own terminal, matching whatever follower/simulation is already running. Controller behavior (gravity compensation, friction compensation, etc.) and per-side hardware parameters live in `src/factr/factr_teleop/factr_teleop/configs/`.
 
+Advice for how configuration parameters are tuned see next subsection (e.g. fixing offset).
+
 ```bash
 ros2 launch launch/teleop_factr.py side:=<side>
 ```
 `<side>` ∈ `left`, `right`, `sim_left`, `sim_right` — this also selects the config file (`franka_<side>.yaml`).
 
+When null space torque optimization is enabled it only enables enhancing manipulability first. By pressing F9 the feature can be activated. It should adjust its elbow position according to the external force maximizing so that the torque that needs to be applied against it is minimal.
+
+Other commercial cartesian leader systems can also be launched with 
+
+```bash
+python launch/teleop_omega6.py --side <side> --translation_scale <float>
+```
+
+or with
+
+```bash
+python launch/teleop_spacemouse.py --side <side> 
+```
+
+### Tuning Configuration Parameters
+In general simulation needs lower force feedback gains than in real world setups. Joints 2 and 4 need slightly smaller gains because of stronger motors. In general a feedback gain is chosen too high if jumpy behavior is seen in the joint when external force is applied. Higher gains can be chosen if the filter only slowly updates very slowly the external force signal, but the slow build up in the signal results in delayed haptic feeling. This is a trade off
+
+Gravity compensation is not relevant for the first joint. It needs to be chosen way higher for the smaller motors than for joint 2 and 4. These are the key joints since they are responsible for holding the most weight. If the arm is pulling slowly in one direction then a gain might be chosen too high. Futhermore, gravity compensation introduces a offset between the leader and follower. There is a helper script (only for single-arm setup yet) within the launch directory. While the teleoperation is running, execute in a fresh terminal
+
+```bash
+python launch/franka_offset
+```
+
+and change the joint_bias_correction - values respectively. This adds a constant offset to the read motor position signals. Note that the last joint needs to have a offset of 0.785 to match the real world position, so the offset needs to be added to this value. Test this in simulation and figure out the correct offset to prevent any damage in real world. 
+
+Friction compensation gains need to be increased until a constant vibration is felt when the system is in rest. This overcomes the static coloumb friction by never resting. If the system is constantly vibrating the enable_speed value can be lowered. When friction compensation is enabled it might again require adjustments within gravity compensation.
+
+null space regularization is a normal PD controller scheme for each joint individually. null_space_joint_target gives the resting pose in there.
+
+null space torque optimization has damping term as well. If null space motion is too aggressive increase values. Manipulability gains can be chosen quite high in comparison. 
+With pressing F9 during operation enhancing torque optimization can be activated. The gains weight each dimension of the external torque individually. So a user can for example define to only react to external forces in z-direction by setting all other values to zero. The sign is defining if it rather avoiding singularity or enhancing torque optimization. Be careful with this feature. It is not tested properly tested and can be falsly implemented. Have a check.
+
+The actuation range can be increased within the "gripper_teleop" section within the config file. There is also the possibility of activating gripper force feedback. 
+(the gripper force feedback code was not tested for a while, because of binary control scheme was used. Can require some adjustments)
+
+
 ## Troubleshooting
 
+### Weird Base-Link Motion
+It can happen that the screws connecting Link 1 and the motor of the first joint loosen. This can result in weird movements when only one screw is connected. Test each joint following behavior separately and figure out where the problem is coming from. If it is the base link it is probably that. If it is fully disconnected there should be no motion encountered. 
+
+On long term longer threadlock should be used and longer screws
 ### Increasing Franka Robot System Thresholds with franka_ros2 v0.1.0
 
 `franka_ros2` v0.1.0 has no runtime API to raise collision/force thresholds. Patch them directly in `src/franka_ros2/franka_hardware/src/robot.cpp`, inside the `Robot` constructor, right after the `franka::Robot` connection is established:
